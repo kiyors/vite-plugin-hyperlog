@@ -26,7 +26,7 @@ pub fn format_log_entry(
   };
 
   let is_api = path.starts_with("/api");
-  
+
   // Use ends_with on the path instead of contains on the whole URL.
   // This is both faster O(1) and fixes a bug where /api?file=x.js was treated as an asset.
   let is_asset = path.ends_with(".js")

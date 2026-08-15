@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-logger",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "High-performance Vite plugin for request and browser logging, powered by Rust",
   "main": "index.js",
   "repository": {
