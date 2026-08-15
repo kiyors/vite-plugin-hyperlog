@@ -2,43 +2,31 @@
   "name": "vite-plugin-logger",
   "version": "0.0.2",
   "description": "High-performance Vite plugin for request and browser logging, powered by Rust",
-  "main": "index.js",
+  "keywords": [
+    "N-API",
+    "NAPI",
+    "Rust",
+    "napi-rs",
+    "node-addon",
+    "node-addon-api"
+  ],
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/kiyors/vite-plugin-logger.git"
   },
-  "license": "MIT",
-  "keywords": [
-    "napi-rs",
-    "NAPI",
-    "N-API",
-    "Rust",
-    "node-addon",
-    "node-addon-api"
-  ],
   "files": [
     "index.d.ts",
     "index.js",
     "lib/"
   ],
+  "main": "index.js",
   "exports": {
     ".": "./lib/plugin.ts"
   },
-  "napi": {
-    "binaryName": "vite-plugin-logger",
-    "targets": [
-      "aarch64-apple-darwin",
-      "x86_64-apple-darwin",
-      "x86_64-pc-windows-msvc",
-      "x86_64-unknown-linux-gnu"
-    ]
-  },
-  "engines": {
-    "node": ">= 22.14.0 < 23 || >= 23.6.0"
-  },
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/",
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "artifacts": "napi artifacts",
@@ -73,6 +61,18 @@
       "oxlint --fix",
       "oxfmt"
     ]
+  },
+  "napi": {
+    "binaryName": "vite-plugin-logger",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ]
+  },
+  "engines": {
+    "node": ">= 22.14.0 < 23 || >= 23.6.0"
   },
   "packageManager": "pnpm@11.18.0"
 }

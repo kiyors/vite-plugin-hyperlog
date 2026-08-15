@@ -2,12 +2,12 @@ name: Publish
 env:
   DEBUG: napi:*
   APP_NAME: vite-plugin-logger
-  MACOSX_DEPLOYMENT_TARGET: '10.13'
-  CARGO_INCREMENTAL: '1'
-'on':
+  MACOSX_DEPLOYMENT_TARGET: "10.13"
+  CARGO_INCREMENTAL: "1"
+"on":
   push:
     tags:
-      - 'v*'
+      - "v*"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -16,22 +16,20 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-      - name: Setup node
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v1
         with:
-          node-version:
-          cache: pnpm
+          version: 11
+          runtime: node@22
+          cache: true
       - name: Install
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - name: Install dependencies
-        run: pnpm install
       - name: Oxlint
         run: pnpm lint
+      - name: Oxfmt
+        run: pnpm run fmt:oxfmt --check
       - name: Cargo fmt
         run: cargo fmt -- --check
       - name: Clippy
@@ -56,21 +54,19 @@ jobs:
     name: stable - ${{ matrix.settings.target }} - node@22
     runs-on: ${{ matrix.settings.host }}
     steps:
-      - uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-      - name: Setup node
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v1
         with:
-          node-version:
-          cache: pnpm
+          version: 11
+          runtime: node@22
+          cache: true
       - name: Install
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           targets: ${{ matrix.settings.target }}
       - name: Cache cargo
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index/
@@ -95,13 +91,11 @@ jobs:
         run: ${{ matrix.settings.setup }}
         if: ${{ matrix.settings.setup }}
         shell: bash
-      - name: Install dependencies
-        run: pnpm install
       - name: Build
         run: ${{ matrix.settings.build }}
         shell: bash
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: |
@@ -126,23 +120,18 @@ jobs:
             target: x86_64-apple-darwin
             architecture: x64
         node:
-          - '22'
-          - '24'
+          - "22"
+          - "24"
     runs-on: ${{ matrix.settings.host }}
     steps:
-      - uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-      - name: Setup node
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v1
         with:
-          node-version:
-          cache: pnpm
-          architecture: ${{ matrix.settings.architecture }}
-      - name: Install dependencies
-        run: pnpm install
+          version: 11
+          runtime: node@${{ matrix.node }}
+          cache: true
       - name: Download artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: .
@@ -161,21 +150,19 @@ jobs:
         target:
           - x86_64-unknown-linux-gnu
         node:
-          - '22'
-          - '24'
+          - "22"
+          - "24"
         exclude:
           - target: armv7-unknown-linux-gnueabihf
-            node: '24'
+            node: "24"
     runs-on: ${{ contains(matrix.target, 'aarch64') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-      - name: Setup node
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v1
         with:
-          node-version:
-          cache: pnpm
+          version: 11
+          runtime: node@${{ matrix.node }}
+          cache: true
       - name: Output docker params
         id: docker
         run: |
@@ -211,9 +198,9 @@ jobs:
               - musl
               - gnu
           EOF
-          pnpm install
+          pnpm install --frozen-lockfile
       - name: Download artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: bindings-${{ matrix.target }}
           path: .
@@ -233,7 +220,7 @@ jobs:
           image: ${{ steps.docker.outputs.IMAGE }}
           name: test-bindings-${{ matrix.target }}
           options: '-v ${{ github.workspace }}:${{ github.workspace }} -w ${{ github.workspace }} --platform ${{ steps.docker.outputs.PLATFORM }}'
-          args: pnpm test
+          args: npm test
   publish:
     name: Publish
     runs-on: ubuntu-latest
@@ -245,20 +232,16 @@ jobs:
       - test-macOS-windows-binding
       - test-linux-binding
     steps:
-      - uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-      - name: Setup node
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v1
         with:
-          node-version:
-          cache: pnpm
-      - name: Install dependencies
-        run: pnpm install
+          version: 11
+          runtime: node@22
+          cache: true
       - name: create npm dirs
         run: pnpm napi create-npm-dirs
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
       - name: Move artifacts

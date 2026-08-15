@@ -21,15 +21,15 @@ Import the loggers and add them to the `plugins` array in your `vite.config.ts` 
 
 ```typescript
 // vite.config.ts
-import { defineConfig } from 'vite'
-import { requestLogger, browserLogger } from 'vite-plugin-logger'
+import { defineConfig } from "vite";
+import { requestLogger, browserLogger } from "vite-plugin-logger";
 
 // Your framework plugin (e.g. React, Vue, Svelte)
-import react from '@vitejs/plugin-react'
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react(), requestLogger(), browserLogger()],
-})
+});
 ```
 
 That's it!
