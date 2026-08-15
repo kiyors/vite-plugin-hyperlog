@@ -1,14 +1,14 @@
 {
-  "name": "vite-plugin-logger",
-  "version": "0.0.5",
+  "name": "@kiyors/vite-plugin-logger",
+  "version": "0.0.7",
   "description": "High-performance Vite plugin for request and browser logging, powered by Rust",
   "keywords": [
-    "N-API",
-    "NAPI",
-    "Rust",
-    "napi-rs",
-    "node-addon",
-    "node-addon-api"
+    "browser-logger",
+    "logger",
+    "request-logger",
+    "vite",
+    "vite-plugin",
+    "vite-plugin-logger"
   ],
   "license": "MIT",
   "repository": {
@@ -18,7 +18,8 @@
   "files": [
     "index.d.ts",
     "index.js",
-    "lib/"
+    "lib/",
+    "*.node"
   ],
   "main": "index.js",
   "exports": {
@@ -36,7 +37,6 @@
     "fmt:oxfmt": "oxfmt",
     "fmt:rs": "cargo fmt",
     "lint": "oxlint .",
-    "prepublishOnly": "napi prepublish -t npm",
     "test": "echo 'No tests yet'",
     "preversion": "napi build --platform && git add .",
     "version": "napi version",

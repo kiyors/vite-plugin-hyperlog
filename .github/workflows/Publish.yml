@@ -240,9 +240,12 @@ jobs:
         with:
           path: artifacts
       - name: Move artifacts
-        run: pnpm artifacts
+        run: |
+          pnpm artifacts
+          find npm -name '*.node' -exec mv {} . \;
+          rm -rf npm
       - name: List packages
-        run: ls -R ./npm
+        run: ls -la *.node
         shell: bash
       - name: Publish
         run: |
