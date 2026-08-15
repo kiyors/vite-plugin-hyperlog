@@ -7,5 +7,7 @@ export declare function formatLogEntry(
   method: string,
   status: number,
   durationMs: number,
-  contentLength?: string | undefined | null,
+  contentLength?: number | undefined | null,
 ): string | null
+
+export declare function getBrowserLoggerScript(): string
