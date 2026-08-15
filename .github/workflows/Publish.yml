@@ -19,7 +19,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/setup@v1
         with:
-          version: 11
           runtime: node@22
           cache: true
       - name: Install
@@ -57,7 +56,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/setup@v1
         with:
-          version: 11
           runtime: node@22
           cache: true
       - name: Install
@@ -127,7 +125,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/setup@v1
         with:
-          version: 11
           runtime: node@${{ matrix.node }}
           cache: true
       - name: Download artifacts
@@ -160,7 +157,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/setup@v1
         with:
-          version: 11
           runtime: node@${{ matrix.node }}
           cache: true
       - name: Output docker params
@@ -219,7 +215,7 @@ jobs:
         with:
           image: ${{ steps.docker.outputs.IMAGE }}
           name: test-bindings-${{ matrix.target }}
-          options: '-v ${{ github.workspace }}:${{ github.workspace }} -w ${{ github.workspace }} --platform ${{ steps.docker.outputs.PLATFORM }}'
+          options: "-v ${{ github.workspace }}:${{ github.workspace }} -w ${{ github.workspace }} --platform ${{ steps.docker.outputs.PLATFORM }}"
           args: npm test
   publish:
     name: Publish
@@ -235,7 +231,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/setup@v1
         with:
-          version: 11
           runtime: node@22
           cache: true
       - name: create npm dirs
