@@ -1,6 +1,6 @@
 {
   "name": "@kiyors/vite-plugin-logger",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "High-performance Vite plugin for request and browser logging, powered by Rust",
   "keywords": [
     "browser-logger",
@@ -39,7 +39,7 @@
     "lint": "oxlint .",
     "test": "echo 'No tests yet'",
     "preversion": "napi build --platform && git add .",
-    "version": "napi version",
+    "version": "napi build --platform && git add index.js",
     "prepare": "husky"
   },
   "devDependencies": {

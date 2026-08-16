@@ -32,6 +32,19 @@ export default defineConfig({
 });
 ```
 
+### Configuration
+
+You can pass an optional configuration object to `requestLogger`:
+
+```typescript
+requestLogger({
+  // Exclude specific HTTP methods from being logged
+  // Available options: "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"
+  // Also accepts lowercase ("get", "post", ...) and title case ("Get", "Post", ...)
+  excludeReqType: ["OPTIONS", "HEAD"],
+});
+```
+
 That's it!
 
 - Every HTTP request to the Vite Dev Server will now be tracked, formatted, and styled by Rust.
