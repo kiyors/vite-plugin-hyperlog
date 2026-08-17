@@ -5,7 +5,7 @@ import { requestLogger as coreRequestLogger, browserLogger, type RequestLoggerCo
 export function requestLogger(config?: RequestLoggerConfig): Plugin {
   return coreRequestLogger({
     ...config,
-    excludeUrls: [...(config?.excludeUrls || [])],
+    excludeUrls: ["/@solid-refresh", ...(config?.excludeUrls || [])],
   });
 }
 

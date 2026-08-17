@@ -3,7 +3,7 @@ import { browserLogger, requestLogger as requestLogger$1 } from "./plugin.mjs";
 function requestLogger(config) {
 	return requestLogger$1({
 		...config,
-		excludeUrls: [...config?.excludeUrls || []]
+		excludeUrls: ["/@solid-refresh", ...config?.excludeUrls || []]
 	});
 }
 //#endregion
