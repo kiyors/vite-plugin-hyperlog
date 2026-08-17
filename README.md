@@ -1,6 +1,8 @@
-# vite-plugin-logger
+# @kiyors/vite-plugin-logger
 
 A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
+
+> **Note**: This plugin has currently only been tested with TanStack. We will be checking other frameworks and updating compatibility in the future.
 
 ## Features
 
@@ -12,7 +14,7 @@ A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
 Install using your preferred package manager (PNPM is recommended):
 
 ```bash
-pnpm add -D vite-plugin-logger
+pnpm add -D @kiyors/vite-plugin-logger
 ```
 
 ## Usage
@@ -22,7 +24,7 @@ Import the loggers and add them to the `plugins` array in your `vite.config.ts` 
 ```typescript
 // vite.config.ts
 import { defineConfig } from "vite";
-import { requestLogger, browserLogger } from "vite-plugin-logger";
+import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger";
 
 // Your framework plugin (e.g. React, Vue, Svelte)
 import react from "@vitejs/plugin-react";
