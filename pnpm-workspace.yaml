@@ -3,3 +3,7 @@ supportedArchitectures:
     - current
   cpu:
     - current
+
+packages:
+  - "."
+  - "playground/*"
