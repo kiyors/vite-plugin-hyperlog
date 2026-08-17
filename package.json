@@ -46,7 +46,8 @@
     "lint": "run-p lint:rs lint:oxlint",
     "lint:oxlint": "oxlint .",
     "lint:rs": "cargo clippy",
-    "test": "echo 'No tests yet'",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preversion": "napi build --platform && tsdown && git add .",
     "version": "napi build --platform && tsdown && git add index.js dist/",
     "prepare": "husky"
