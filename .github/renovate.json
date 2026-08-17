@@ -4,13 +4,18 @@
   "labels": ["dependencies"],
   "packageRules": [
     {
-      "matchPackageNames": ["@napi/cli", "napi", "napi-build", "napi-derive"],
+      "matchPackageNames": ["@napi-rs/cli", "napi", "napi-derive", "napi-build"],
       "addLabels": ["napi-rs"],
       "groupName": "napi-rs"
     },
     {
-      "matchPackagePatterns": ["^eslint", "^@typescript-eslint"],
-      "groupName": "linter"
+      "matchPackageNames": ["@emnapi/core", "@emnapi/runtime", "@tybys/wasm-util"],
+      "groupName": "emnapi"
+    },
+    {
+      "matchPackageNames": ["oxlint", "oxfmt"],
+      "addLabels": ["tooling"],
+      "groupName": "oxc"
     }
   ],
   "commitMessagePrefix": "chore: ",

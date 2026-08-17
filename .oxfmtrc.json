@@ -17,14 +17,15 @@
   "sortPackageJson": true,
   "endOfLine": "lf",
   "ignorePatterns": [
+    "node_modules/",
+    "dist/",
+    "pnpm-lock.yaml",
     "target",
     "index.js",
     "index.d.ts",
     "package-template.wasi-browser.js",
     "package-template.wasi.cjs",
     "wasi-worker-browser.mjs",
-    "wasi-worker.mjs",
-    "target",
-    "**/pnpm-lock.yaml"
+    "wasi-worker.mjs"
   ]
 }
