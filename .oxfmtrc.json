@@ -26,6 +26,18 @@
     "package-template.wasi-browser.js",
     "package-template.wasi.cjs",
     "wasi-worker-browser.mjs",
-    "wasi-worker.mjs"
+    "wasi-worker.mjs",
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
+    ".gemini/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
+    ".windsurf/**",
+    "tools/oxlint/anti-slop/**"
   ]
 }
