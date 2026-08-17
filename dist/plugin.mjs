@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod), cb = null), mod.exports);
 var __require = /* #__PURE__ */ (() => createRequire(import.meta.url))();
 //#endregion
-//#region src/lib/plugin.ts
+//#region src/plugin.ts
 var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module) => {
 	const { readFileSync } = __require("fs");
 	let nativeBinding = null;
@@ -54,7 +54,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 		else if (process.platform === "android") {
 			if (process.arch === "arm64") {
 				try {
-					return __require("../../vite-plugin-logger.android-arm64.node");
+					return __require("../vite-plugin-logger.android-arm64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -68,7 +68,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm") {
 				try {
-					return __require("../../vite-plugin-logger.android-arm-eabi.node");
+					return __require("../vite-plugin-logger.android-arm-eabi.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -85,7 +85,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 			if (process.arch === "x64") {
 				if (process.config && process.config.variables && process.config.variables.shlib_suffix === "dll.a" || process.config && process.config.variables && process.config.variables.node_target_type === "shared_library") {
 					try {
-						return __require("../../vite-plugin-logger.win32-x64-gnu.node");
+						return __require("../vite-plugin-logger.win32-x64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -99,7 +99,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../../vite-plugin-logger.win32-x64-msvc.node");
+						return __require("../vite-plugin-logger.win32-x64-msvc.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -114,7 +114,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "ia32") {
 				try {
-					return __require("../../vite-plugin-logger.win32-ia32-msvc.node");
+					return __require("../vite-plugin-logger.win32-ia32-msvc.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -128,7 +128,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm64") {
 				try {
-					return __require("../../vite-plugin-logger.win32-arm64-msvc.node");
+					return __require("../vite-plugin-logger.win32-arm64-msvc.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -143,7 +143,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 			} else loadErrors.push(/* @__PURE__ */ new Error(`Unsupported architecture on Windows: ${process.arch}`));
 		} else if (process.platform === "darwin") {
 			try {
-				return __require("../../vite-plugin-logger.darwin-universal.node");
+				return __require("../vite-plugin-logger.darwin-universal.node");
 			} catch (e) {
 				loadErrors.push(e);
 			}
@@ -157,7 +157,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 			}
 			if (process.arch === "x64") {
 				try {
-					return __require("../../vite-plugin-logger.darwin-x64.node");
+					return __require("../vite-plugin-logger.darwin-x64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -171,7 +171,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm64") {
 				try {
-					return __require("../../vite-plugin-logger.darwin-arm64.node");
+					return __require("../vite-plugin-logger.darwin-arm64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -187,7 +187,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 		} else if (process.platform === "freebsd") {
 			if (process.arch === "x64") {
 				try {
-					return __require("../../vite-plugin-logger.freebsd-x64.node");
+					return __require("../vite-plugin-logger.freebsd-x64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -201,7 +201,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm64") {
 				try {
-					return __require("../../vite-plugin-logger.freebsd-arm64.node");
+					return __require("../vite-plugin-logger.freebsd-arm64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -218,7 +218,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 			if (process.arch === "x64") {
 				if (isMusl()) {
 					try {
-						return __require("../../vite-plugin-logger.linux-x64-musl.node");
+						return __require("../vite-plugin-logger.linux-x64-musl.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -232,7 +232,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../../vite-plugin-logger.linux-x64-gnu.node");
+						return __require("../vite-plugin-logger.linux-x64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -248,7 +248,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 			} else if (process.arch === "arm64") {
 				if (isMusl()) {
 					try {
-						return __require("../../vite-plugin-logger.linux-arm64-musl.node");
+						return __require("../vite-plugin-logger.linux-arm64-musl.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -262,7 +262,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../../vite-plugin-logger.linux-arm64-gnu.node");
+						return __require("../vite-plugin-logger.linux-arm64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -278,7 +278,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 			} else if (process.arch === "arm") {
 				if (isMusl()) {
 					try {
-						return __require("../../vite-plugin-logger.linux-arm-musleabihf.node");
+						return __require("../vite-plugin-logger.linux-arm-musleabihf.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -292,7 +292,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../../vite-plugin-logger.linux-arm-gnueabihf.node");
+						return __require("../vite-plugin-logger.linux-arm-gnueabihf.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -308,7 +308,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 			} else if (process.arch === "loong64") {
 				if (isMusl()) {
 					try {
-						return __require("../../vite-plugin-logger.linux-loong64-musl.node");
+						return __require("../vite-plugin-logger.linux-loong64-musl.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -322,7 +322,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../../vite-plugin-logger.linux-loong64-gnu.node");
+						return __require("../vite-plugin-logger.linux-loong64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -338,7 +338,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 			} else if (process.arch === "riscv64") {
 				if (isMusl()) {
 					try {
-						return __require("../../vite-plugin-logger.linux-riscv64-musl.node");
+						return __require("../vite-plugin-logger.linux-riscv64-musl.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -352,7 +352,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../../vite-plugin-logger.linux-riscv64-gnu.node");
+						return __require("../vite-plugin-logger.linux-riscv64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
@@ -367,7 +367,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "ppc64") {
 				try {
-					return __require("../../vite-plugin-logger.linux-ppc64-gnu.node");
+					return __require("../vite-plugin-logger.linux-ppc64-gnu.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -381,7 +381,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "s390x") {
 				try {
-					return __require("../../vite-plugin-logger.linux-s390x-gnu.node");
+					return __require("../vite-plugin-logger.linux-s390x-gnu.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -397,7 +397,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 		} else if (process.platform === "openharmony") {
 			if (process.arch === "arm64") {
 				try {
-					return __require("../../vite-plugin-logger.openharmony-arm64.node");
+					return __require("../vite-plugin-logger.openharmony-arm64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -411,7 +411,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "x64") {
 				try {
-					return __require("../../vite-plugin-logger.openharmony-x64.node");
+					return __require("../vite-plugin-logger.openharmony-x64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
@@ -425,7 +425,7 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm") {
 				try {
-					return __require("../../vite-plugin-logger.openharmony-arm.node");
+					return __require("../vite-plugin-logger.openharmony-arm.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}

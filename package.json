@@ -64,8 +64,12 @@
     "npm-run-all2": "^9.0.3",
     "oxfmt": "^0.63.0",
     "oxlint": "^1.78.0",
+    "playwright": "^1.62.1",
+    "tree-kill": "^1.2.2",
     "tsdown": "^0.22.14",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "wait-on": "^9.1.0"
   },
   "lint-staged": {
     "*.@(js|ts|tsx)": [

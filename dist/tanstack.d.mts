@@ -1,6 +1,6 @@
 import { RequestLoggerConfig, browserLogger } from "./plugin.mjs";
 import { Plugin } from "vite";
-//#region src/lib/tanstack.d.ts
+//#region src/tanstack.d.ts
 declare function requestLogger(config?: RequestLoggerConfig): Plugin;
 //#endregion
 export { browserLogger, requestLogger };
