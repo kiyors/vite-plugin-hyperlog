@@ -120,6 +120,10 @@ jobs:
       - name: List packages
         run: ls -R .
         shell: bash
+      - name: Build TypeScript
+        run: pnpm build:ts
+      - name: Install Playwright Browsers
+        run: npx playwright install chromium --with-deps
       - name: Test bindings
         run: pnpm test
   test-linux-binding:
@@ -147,6 +151,10 @@ jobs:
       - name: List packages
         run: ls -R .
         shell: bash
+      - name: Build TypeScript
+        run: pnpm build:ts
+      - name: Install Playwright Browsers
+        run: npx playwright install chromium --with-deps
       - name: Test bindings
         run: pnpm test
   publish:
