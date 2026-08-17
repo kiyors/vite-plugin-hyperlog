@@ -1,7 +1,14 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["lib/plugin.ts"],
+  entry: [
+    "src/lib/plugin.ts",
+    "src/lib/tanstack.ts",
+    "src/lib/react.ts",
+    "src/lib/vue.ts",
+    "src/lib/svelte.ts",
+    "src/lib/solid.ts",
+  ],
   format: "esm",
   dts: {
     tsgo: true,

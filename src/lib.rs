@@ -9,15 +9,7 @@ pub fn format_log_entry(
   duration_ms: f64,
   content_length: Option<f64>,
 ) -> Option<String> {
-  // Ignore polling or HMR requests
-  if original_url.contains("?import")
-    || original_url.contains("vite_ping")
-    || original_url.contains("@fs")
-    || original_url.contains("/@vite/client")
-    || original_url.contains("/@react-refresh")
-  {
-    return None;
-  }
+  // URL exclusions are now handled on the JS side for better performance (avoids attaching event listeners entirely)
 
   // Avoid Vec allocation by using split_once instead of .split().collect()
   let (path, query) = match original_url.split_once('?') {

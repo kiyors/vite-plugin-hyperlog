@@ -19,11 +19,16 @@
     "dist/",
     "index.d.ts",
     "index.js",
-    "lib/",
+    "src/",
     "*.node"
   ],
   "exports": {
-    ".": "./dist/plugin.mjs",
+    "./plugin": "./dist/plugin.mjs",
+    "./react": "./dist/react.mjs",
+    "./solid": "./dist/solid.mjs",
+    "./svelte": "./dist/svelte.mjs",
+    "./tanstack": "./dist/tanstack.mjs",
+    "./vue": "./dist/vue.mjs",
     "./package.json": "./package.json"
   },
   "publishConfig": {

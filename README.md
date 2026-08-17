@@ -2,7 +2,7 @@
 
 A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
 
-> **Note**: This plugin has currently only been tested with TanStack. We will be checking other frameworks and updating compatibility in the future.
+> **Note**: This plugin supports multiple frameworks via tailored entry points (React, Vue, Svelte, Solid, and TanStack).
 
 ## Features
 
@@ -19,14 +19,15 @@ pnpm add -D @kiyors/vite-plugin-logger
 
 ## Usage
 
-Import the loggers and add them to the `plugins` array in your `vite.config.ts` (or `vite.config.js`).
+Import `requestLogger` and `browserLogger` from your specific framework's entry point, and add them to the `plugins` array in your `vite.config.ts`. The framework-specific import automatically sets up optimized exclusions.
 
 ```typescript
 // vite.config.ts
 import { defineConfig } from "vite";
-import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger";
+import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger/react";
+// OR from "@kiyors/vite-plugin-logger/tanstack";
+// OR from "@kiyors/vite-plugin-logger/vue";
 
-// Your framework plugin (e.g. React, Vue, Svelte)
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
@@ -44,6 +45,9 @@ requestLogger({
   // Available options: "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"
   // Also accepts lowercase ("get", "post", ...) and title case ("Get", "Post", ...)
   excludeReqType: ["OPTIONS", "HEAD"],
+
+  // Custom URL substrings to exclude from the logs
+  excludeUrls: ["/my-custom-endpoint"],
 });
 ```
 
