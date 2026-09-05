@@ -38,6 +38,8 @@
     ".pi/**",
     ".roo/**",
     ".windsurf/**",
+    "**/src/routeTree.gen.ts",
+    "playground/**",
     "tools/oxlint/anti-slop/**"
   ]
 }

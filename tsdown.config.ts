@@ -1,12 +1,18 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["src/plugin.ts", "src/tanstack.ts", "src/react.ts", "src/vue.ts", "src/svelte.ts", "src/solid.ts"],
+  entry: [
+    "src/plugin.ts",
+    "src/tanstack.ts",
+    "src/tanstack-client.ts",
+    "src/react.ts",
+    "src/vue.ts",
+    "src/svelte.ts",
+    "src/solid.ts",
+  ],
   format: "esm",
-  dts: {
-    tsgo: true,
-  },
-  exports: true,
+  dts: true,
+  exports: false,
   clean: true,
   outDir: "dist",
   platform: "node",

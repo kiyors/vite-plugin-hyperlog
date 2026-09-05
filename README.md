@@ -98,7 +98,7 @@ registerTanStackRouterLogger(router);
 
 ##### Terminal Output Example
 
-```text
+```bash
 22:56:26 [route]     307 GET / ➜ /login?redirect=%2F 120.50ms
 22:56:26 [route]     200 GET /login (route: /login) 45.20ms
 22:57:03 [server-fn] 200 GET getAuthSession (routes/__root.tsx) 18.82ms (x2)
@@ -117,7 +117,7 @@ registerTanStackRouterLogger(router);
 - **Intelligent Stack Trace Cleaning & Sourcemap Remapping**: Powered by `regex` and `oxc_sourcemap` to parse browser error frames, highlight user application frames (`➜ src/lib/api.ts:25:11 in fetchUser`), dim dependency noise, and remap positions to original TypeScript source files.
 - **Flood Protection**: Rapid repetitive logs (e.g. from render loops or scroll listeners) are debounced and collapsed with a repeat counter (`(x5)`).
 
-```text
+```bash
 22:56:51 [browser]       User signed in  (src/components/Login.tsx:42)
 22:57:05 [browser timer] loadData: 48.20ms  (src/routes/dashboard.tsx:88)
 22:57:10 [browser warn]  Slow render detected (x3)  (src/view.tsx:15)

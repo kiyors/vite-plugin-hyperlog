@@ -1,0 +1,35 @@
+{
+  "name": "vite-plugin-logger-darwin-arm64",
+  "version": "0.0.8",
+  "description": "High-performance Vite plugin for request and browser logging, powered by Rust",
+  "keywords": [
+    "N-API",
+    "NAPI",
+    "Rust",
+    "napi-rs",
+    "node-addon",
+    "node-addon-api"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/kiyors/vite-plugin-logger.git"
+  },
+  "files": [
+    "vite-plugin-logger.darwin-arm64.node"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "main": "vite-plugin-logger.darwin-arm64.node",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">= 22.14.0 < 23 || >= 23.6.0"
+  }
+}

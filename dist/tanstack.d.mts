@@ -1,4 +1,5 @@
 import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-DwLV3Bnh.mjs";
+import { TanStackLocation, TanStackResolvedState, TanStackRouteMatch, TanStackRouterLike, registerTanStackRouterLogger } from "./tanstack-client.mjs";
 import { Plugin } from "vite";
 //#region src/tanstack.d.ts
 interface TanStackLoggerConfig extends RequestLoggerConfig {
@@ -34,36 +35,5 @@ interface RouteMatcher {
 }
 declare function parseRouteTreeContent(content: string): RouteMatcher[];
 declare function requestLogger(config?: TanStackLoggerConfig): Plugin;
-interface TanStackRouteMatch {
-  routeId?: string;
-  id?: string;
-  route?: {
-    id?: string;
-  };
-}
-interface TanStackLocation {
-  pathname?: string;
-  href?: string;
-  params?: Record<string, string | number | boolean>;
-}
-interface TanStackResolvedState {
-  toLocation?: TanStackLocation;
-  matches?: TanStackRouteMatch[];
-}
-interface TanStackRouterLike {
-  subscribe(event: "onBeforeNavigate" | "onResolved" | "onPreloaded" | string, callback: (state: TanStackResolvedState) => void): void;
-}
-/**
- * Client-side subscriber for TanStack Router.
- * Import this in your client entry or router.tsx to log SPA navigations and preloads to the terminal.
- *
- * @example
- * ```ts
- * import { registerTanStackRouterLogger } from "@kiyors/vite-plugin-logger/tanstack";
- * export const router = createRouter({ routeTree });
- * registerTanStackRouterLogger(router);
- * ```
- */
-declare function registerTanStackRouterLogger(router: TanStackRouterLike): void;
 //#endregion
 export { RouteMatcher, TanStackLocation, TanStackLoggerConfig, TanStackResolvedState, TanStackRouteMatch, TanStackRouterLike, browserLogger, parseRouteTreeContent, registerTanStackRouterLogger, requestLogger };
