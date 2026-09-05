@@ -3,7 +3,11 @@ env:
   DEBUG: napi:*
   APP_NAME: vite-plugin-logger
   MACOSX_DEPLOYMENT_TARGET: "10.13"
-  CARGO_INCREMENTAL: "1"
+  CARGO_INCREMENTAL: "0"
+
+permissions:
+  contents: read
+
 "on":
   push:
     branches:
@@ -16,7 +20,15 @@ env:
       - "**/*.gitignore"
       - .editorconfig
       - docs/**
-  pull_request: null
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - LICENSE
+      - "**/*.gitignore"
+      - .editorconfig
+      - docs/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,6 +37,7 @@ concurrency:
 jobs:
   lint:
     name: Lint
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,6 +68,7 @@ jobs:
 
   build-ts:
     name: Build TypeScript
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +80,7 @@ jobs:
         run: pnpm build:ts
 
   build:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -110,10 +125,12 @@ jobs:
             ${{ env.APP_NAME }}.*.node
             ${{ env.APP_NAME }}.*.wasm
           if-no-files-found: error
-  test-macOS-windows-binding:
+
+  test-binding:
     name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
     needs:
       - build
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -127,6 +144,9 @@ jobs:
           - host: macos-latest
             target: x86_64-apple-darwin
             architecture: x64
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            architecture: x64
         node:
           - "22"
           - "24"
@@ -138,9 +158,20 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           architecture: ${{ matrix.settings.architecture }}
-      - uses: pnpm/setup@v1
+      - name: Install pnpm
+        run: npm install -g pnpm@11.18.0
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent | tr '\\' '/')" >> $GITHUB_ENV
+      - uses: actions/cache@v4
         with:
-          cache: true
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-${{ matrix.settings.architecture }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.settings.architecture }}-pnpm-store-
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -151,41 +182,12 @@ jobs:
         shell: bash
       - name: Test bindings
         run: pnpm test:unit
-  test-linux-binding:
-    name: Test x86_64-unknown-linux-gnu - node@${{ matrix.node }}
-    needs:
-      - build
-    strategy:
-      fail-fast: false
-      matrix:
-        node:
-          - "22"
-          - "24"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-          architecture: x64
-      - uses: pnpm/setup@v1
-        with:
-          cache: true
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: bindings-x86_64-unknown-linux-gnu
-          path: .
-      - name: List packages
-        run: ls -R .
-        shell: bash
-      - name: Test bindings
-        run: pnpm test:unit
+
   e2e:
     name: E2E Tests
     needs:
       - build
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -214,3 +216,11 @@ jobs:
         run: npx playwright install-deps chromium
       - name: Run E2E tests
         run: pnpm test:e2e
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-artifacts
+          path: |
+            test-results/
+            playwright-report/

@@ -155,15 +155,15 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
     output = "";
 
     await page.goto(url, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector("#btn-server-fn", { timeout: 10000 });
-    await page.waitForTimeout(1200);
+    await page.waitForSelector('#logger-tester[data-hydrated="true"]', { timeout: 25000 });
+    await page.waitForTimeout(500);
     output = "";
 
     // 1. Test Server Function decoding
     await page.click("#btn-server-fn");
     await page.waitForFunction(
       () => document.getElementById("logger-status")?.textContent?.includes("Server function called"),
-      { timeout: 5000 },
+      { timeout: 10000 },
     );
     await page.waitForTimeout(500);
     expect(stripAnsi(output)).toContain("[server-fn]");
@@ -174,7 +174,7 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
     await page.click("#btn-route-request");
     await page.waitForFunction(
       () => document.getElementById("logger-status")?.textContent?.includes("Matched route requested"),
-      { timeout: 5000 },
+      { timeout: 10000 },
     );
     await page.waitForTimeout(500);
     expect(stripAnsi(output)).toContain("[route]");
@@ -183,16 +183,28 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
 
     // 3. Test Batched Server Functions (debounced with repeat count)
     await page.click("#btn-batch-server-fn");
+    await page.waitForFunction(
+      () => document.getElementById("logger-status")?.textContent?.includes("Batched server functions dispatched"),
+      { timeout: 10000 },
+    );
     await page.waitForTimeout(800);
     expect(stripAnsi(output)).toContain("(x3)");
 
     // 4. Test Rich Browser Logging & Timers
     await page.click("#btn-rich-log");
+    await page.waitForFunction(
+      () => document.getElementById("logger-status")?.textContent?.includes("Rich object logged to terminal"),
+      { timeout: 10000 },
+    );
     await page.waitForTimeout(600);
     expect(stripAnsi(output)).toContain("alex");
     expect(stripAnsi(output)).toContain("Haute Pâtisserie");
 
     await page.click("#btn-timer-log");
+    await page.waitForFunction(
+      () => document.getElementById("logger-status")?.textContent?.includes("Timer logged to terminal"),
+      { timeout: 10000 },
+    );
     await page.waitForTimeout(600);
     expect(stripAnsi(output)).toContain("tanstack-operation");
 
@@ -209,4 +221,4 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
       });
     }
   }
-}, 45000);
+}, 60000);

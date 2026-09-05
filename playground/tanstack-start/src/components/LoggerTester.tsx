@@ -1,8 +1,13 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoggerTester() {
+  const [hydrated, setHydrated] = useState(false);
   const [status, setStatus] = useState("Ready");
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   const callServerFn = async () => {
     setStatus("Calling server function...");
@@ -59,7 +64,11 @@ export default function LoggerTester() {
   };
 
   return (
-    <div className="bg-charcoal/80 border border-gold/30 rounded-xl p-6 my-8 max-w-4xl mx-auto shadow-2xl backdrop-blur-md">
+    <div
+      id="logger-tester"
+      data-hydrated={hydrated ? "true" : "false"}
+      className="bg-charcoal/80 border border-gold/30 rounded-xl p-6 my-8 max-w-4xl mx-auto shadow-2xl backdrop-blur-md"
+    >
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-display text-xl text-gold font-bold">⚡ Logger Integration Verification</h3>
         <span
