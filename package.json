@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-hyperlog",
-  "version": "0.0.12",
+  "version": "0.0.1",
   "description": "High-performance Vite plugin for request and browser logging, powered by Rust",
   "keywords": [
     "browser-logger",
