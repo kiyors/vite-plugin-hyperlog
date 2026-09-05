@@ -37,6 +37,12 @@ export interface RequestLoggerConfig {
 const DEFAULT_EXCLUDE_URLS = ["?import", "vite_ping", "@fs", "/@vite/client"];
 
 export function requestLogger(config?: RequestLoggerConfig): Plugin {
+  const exclusions = [...DEFAULT_EXCLUDE_URLS, ...(config?.excludeUrls || [])];
+  const excludedMethods = config?.excludeReqType
+    ? new Set(config.excludeReqType.map((type) => type.toUpperCase()))
+    : null;
+  const resolveRoute = config?.resolveRoute;
+
   return {
     name: "vite-plugin-request-logging-rust",
     apply: "serve",
@@ -45,16 +51,14 @@ export function requestLogger(config?: RequestLoggerConfig): Plugin {
         const url = req.originalUrl || "";
         const method = req.method || "GET";
 
-        if (
-          config?.excludeReqType &&
-          config.excludeReqType.some((type) => type.toLowerCase() === method.toLowerCase())
-        ) {
+        if (excludedMethods && excludedMethods.has(method.toUpperCase())) {
           return next();
         }
 
-        const exclusions = [...DEFAULT_EXCLUDE_URLS, ...(config?.excludeUrls || [])];
-        if (exclusions.some((match) => url.includes(match))) {
-          return next();
+        for (let i = 0; i < exclusions.length; i++) {
+          if (url.includes(exclusions[i])) {
+            return next();
+          }
         }
 
         const start = performance.now();
@@ -74,12 +78,12 @@ export function requestLogger(config?: RequestLoggerConfig): Plugin {
           const contentLength = cl ? Number(cl) : null;
           const location = res.getHeader("location");
           const redirectLocation = location ? String(location) : null;
-          const routeName = config?.resolveRoute ? config.resolveRoute(url) : null;
+          const routeName = resolveRoute ? resolveRoute(url) : null;
 
           // Call our blazing fast Rust function
           const logString = formatLogEntry(
-            req.originalUrl || "",
-            req.method || "GET",
+            url,
+            method,
             status,
             durationMs,
             contentLength,
@@ -114,13 +118,13 @@ export function browserLogger(): Plugin {
 
     // Expose a virtual module to run the browser logging script
     resolveId(id) {
-      if (id === virtualModuleId) {
+      if (id === virtualModuleId || id === resolvedVirtualModuleId || id.endsWith(virtualModuleId)) {
         return resolvedVirtualModuleId;
       }
     },
 
     load(id) {
-      if (id === resolvedVirtualModuleId) {
+      if (id === resolvedVirtualModuleId || id.endsWith(virtualModuleId)) {
         return getBrowserLoggerScript();
       }
     },
@@ -146,6 +150,7 @@ export function browserLogger(): Plugin {
       }
 
       const pendingBrowserLogs = new Map<string, PendingBrowserLog>();
+      const MAX_PENDING_LOGS = 250;
 
       const flushBrowserLog = (key: string) => {
         const entry = pendingBrowserLogs.get(key);
@@ -178,9 +183,21 @@ export function browserLogger(): Plugin {
         const existing = pendingBrowserLogs.get(key);
         if (existing) {
           existing.count += 1;
+          // Prevent starvation: if logs repeat rapidly, flush at batch of 20
+          if (existing.count >= 20) {
+            clearTimeout(existing.timer);
+            flushBrowserLog(key);
+            return;
+          }
           clearTimeout(existing.timer);
           existing.timer = setTimeout(() => flushBrowserLog(key), 80);
           return;
+        }
+
+        // Prevent unbounded memory growth if unique logs flood
+        if (pendingBrowserLogs.size >= MAX_PENDING_LOGS) {
+          const firstKey = pendingBrowserLogs.keys().next().value;
+          if (firstKey) flushBrowserLog(firstKey);
         }
 
         const entry: PendingBrowserLog = {
@@ -218,3 +235,37 @@ export function browserLogger(): Plugin {
     },
   };
 }
+
+/**
+ * Convenient unified plugin that registers both requestLogger and browserLogger in one call.
+ *
+ * @example
+ * ```ts
+ * import logger from "@kiyors/vite-plugin-logger";
+ * export default defineConfig({
+ *   plugins: [logger()],
+ * });
+ * ```
+ */
+export function logger(config?: RequestLoggerConfig): Plugin[] {
+  return [requestLogger(config), browserLogger()];
+}
+
+/**
+ * Factory helper for framework-specific adapters (React, Solid, Svelte, Vue)
+ * that injects default framework-specific exclusions while keeping behavior unified.
+ */
+export function createFrameworkLogger(defaultExclude: string) {
+  function reqLogger(config?: RequestLoggerConfig): Plugin {
+    return requestLogger({
+      ...config,
+      excludeUrls: [defaultExclude, ...(config?.excludeUrls || [])],
+    });
+  }
+  function log(config?: RequestLoggerConfig): Plugin[] {
+    return [reqLogger(config), browserLogger()];
+  }
+  return { requestLogger: reqLogger, logger: log };
+}
+
+export default logger;

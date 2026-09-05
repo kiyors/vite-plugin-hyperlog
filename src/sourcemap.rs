@@ -1,8 +1,9 @@
-use std::sync::LazyLock;
+use std::fmt::Write;
 
 use napi_derive::napi;
-use oxc_sourcemap::SourceMap;
-use regex::Regex;
+
+use crate::json_utils::{extract_json_field, extract_json_string_array};
+use crate::stack_trace::parse_stack_frame;
 
 #[napi(object)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,95 +14,190 @@ pub struct RemappedPosition {
   pub name: Option<String>,
 }
 
-static STACK_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
-  Regex::new(
-    r#"(?m)(?P<prefix>^\s*at\s+(?:(?P<fn>[a-zA-Z0-9_$<>.]+)\s+\()?(?:https?://[^/]+(?:/@fs)?)?(?P<path>/?[a-zA-Z0-9_$./@-]+(?:\.[a-zA-Z0-9]+)?)):(?P<line>\d+):(?P<col>\d+)(?P<suffix>\)?)"#,
-  )
-  .unwrap()
-});
+#[inline]
+fn decode_vlq(bytes: &[u8], idx: &mut usize) -> Option<i64> {
+  let mut result = 0i64;
+  let mut shift = 0;
 
-/// Remaps a compiled line and column position to its original TypeScript source location
-/// using high-performance OXC sourcemap decoding.
+  while let Some(&b) = bytes.get(*idx) {
+    *idx += 1;
+    let val = match b {
+      b'A'..=b'Z' => i64::from(b - b'A'),
+      b'a'..=b'z' => i64::from(b - b'a' + 26),
+      b'0'..=b'9' => i64::from(b - b'0' + 52),
+      b'+' => 62,
+      b'/' => 63,
+      _ => return None,
+    };
+    let has_continuation = (val & 32) != 0;
+    let digit = val & 31;
+    result |= digit << shift;
+    shift += 5;
+    if !has_continuation {
+      break;
+    }
+  }
+
+  let is_negative = (result & 1) != 0;
+  let value = result >> 1;
+  Some(if is_negative { -value } else { value })
+}
+
+struct DecodedToken<'a> {
+  source: Option<&'a str>,
+  src_line: u32,
+  src_col: u32,
+  name: Option<&'a str>,
+}
+
+fn lookup_source_token<'a>(
+  sources: &'a [String],
+  names: &'a [String],
+  mappings: &str,
+  target_line: u32,
+  target_col: u32,
+) -> Option<DecodedToken<'a>> {
+  let bytes = mappings.as_bytes();
+  let mut idx = 0;
+
+  let mut current_line: u32 = 0;
+  let mut source_idx: i64 = 0;
+  let mut orig_line: i64 = 0;
+  let mut orig_col: i64 = 0;
+  let mut name_idx: i64 = 0;
+
+  let mut best_token: Option<DecodedToken<'a>> = None;
+
+  while current_line <= target_line && idx < bytes.len() {
+    let mut gen_col: i64 = 0;
+
+    while let Some(&b) = bytes.get(idx) {
+      if b == b';' {
+        idx += 1;
+        break;
+      }
+      if b == b',' {
+        idx += 1;
+        continue;
+      }
+
+      let col_delta = decode_vlq(bytes, &mut idx)?;
+      gen_col += col_delta;
+
+      let has_source = bytes.get(idx).is_some_and(|&c| c != b',' && c != b';');
+      if has_source {
+        source_idx += decode_vlq(bytes, &mut idx)?;
+        orig_line += decode_vlq(bytes, &mut idx)?;
+        orig_col += decode_vlq(bytes, &mut idx)?;
+
+        let has_name = bytes.get(idx).is_some_and(|&c| c != b',' && c != b';');
+        let current_name = if has_name {
+          name_idx += decode_vlq(bytes, &mut idx)?;
+          usize::try_from(name_idx)
+            .ok()
+            .and_then(|i| names.get(i).map(String::as_str))
+        } else {
+          None
+        };
+
+        if current_line == target_line {
+          if gen_col <= i64::from(target_col) {
+            let current_source = usize::try_from(source_idx)
+              .ok()
+              .and_then(|i| sources.get(i).map(String::as_str));
+
+            best_token = Some(DecodedToken {
+              source: current_source,
+              src_line: u32::try_from(orig_line).unwrap_or(0),
+              src_col: u32::try_from(orig_col).unwrap_or(0),
+              name: current_name,
+            });
+          } else {
+            return best_token;
+          }
+        }
+      }
+    }
+
+    if current_line == target_line {
+      return best_token;
+    }
+
+    current_line += 1;
+  }
+
+  best_token
+}
+
+/// Remaps a compiled line and column position to its original TypeScript source location.
+#[must_use]
 pub fn remap_source_position(
   sourcemap_json: &str,
   line: u32,
   col: u32,
 ) -> Option<RemappedPosition> {
-  let sm = SourceMap::from_json_string(sourcemap_json).ok()?;
-  let lookup_table = sm.generate_lookup_table();
+  let mappings = extract_json_field(sourcemap_json, "mappings")?;
+  let sources = extract_json_string_array(sourcemap_json, "sources");
+  let names = extract_json_string_array(sourcemap_json, "names");
 
-  // Sourcemap lines are 0-indexed; editors and stack traces are 1-indexed
-  let target_line = if line > 0 { line - 1 } else { 0 };
-  let token = sm.lookup_source_view_token(&lookup_table, target_line, col)?;
-  let (source, src_line, src_col, name) = token.to_tuple();
+  let target_line = line.saturating_sub(1);
+  let token = lookup_source_token(&sources, &names, mappings, target_line, col)?;
 
   Some(RemappedPosition {
-    source: source.map(|s| s.to_string()),
-    line: src_line + 1,
-    column: src_col,
-    name: name.map(|n| n.to_string()),
+    source: token.source.map(ToString::to_string),
+    line: token.src_line + 1,
+    column: token.src_col,
+    name: token.name.map(ToString::to_string),
   })
 }
 
 /// Remaps all stack frames in a browser error stack trace using the provided source map.
+#[must_use]
 pub fn remap_stack_trace(sourcemap_json: &str, stack: &str) -> String {
-  let sm = match SourceMap::from_json_string(sourcemap_json) {
-    Ok(s) => s,
-    Err(_) => return stack.to_string(),
+  let Some(mappings) = extract_json_field(sourcemap_json, "mappings") else {
+    return stack.to_string();
   };
-  let lookup_table = sm.generate_lookup_table();
+  let sources = extract_json_string_array(sourcemap_json, "sources");
+  let names = extract_json_string_array(sourcemap_json, "names");
 
-  let mut remapped = String::with_capacity(stack.len());
-  let mut last_idx = 0;
+  let mut remapped = String::with_capacity(stack.len() + 64);
 
-  for caps in STACK_FRAME_RE.captures_iter(stack) {
-    let full_match = caps.get(0).unwrap();
-    remapped.push_str(&stack[last_idx..full_match.start()]);
-
-    let line: u32 = caps
-      .name("line")
-      .and_then(|m| m.as_str().parse().ok())
-      .unwrap_or(0);
-    let col: u32 = caps
-      .name("col")
-      .and_then(|m| m.as_str().parse().ok())
-      .unwrap_or(0);
-
-    let target_line = if line > 0 { line - 1 } else { 0 };
-
-    if let Some(token) = sm.lookup_source_view_token(&lookup_table, target_line, col) {
-      let (source, src_line, src_col, name) = token.to_tuple();
-      let original_file = source.unwrap_or("");
-      let original_line = src_line + 1;
-      let original_col = src_col;
-
-      let fn_str = match name {
-        Some(n) => n.to_string(),
-        None => caps
-          .name("fn")
-          .map(|m| m.as_str().to_string())
-          .unwrap_or_default(),
-      };
-
-      if fn_str.is_empty() {
-        remapped.push_str(&format!(
-          "    at {}:{}:{}",
-          original_file, original_line, original_col
-        ));
-      } else {
-        remapped.push_str(&format!(
-          "    at {} ({}:{}:{})",
-          fn_str, original_file, original_line, original_col
-        ));
-      }
-    } else {
-      remapped.push_str(full_match.as_str());
+  for (i, line) in stack.lines().enumerate() {
+    if i > 0 {
+      remapped.push('\n');
     }
+    let trimmed = line.trim();
+    if trimmed.starts_with("at ") || line.starts_with("    at ") {
+      if let Some(frame) = parse_stack_frame(trimmed) {
+        let target_line = frame.line.saturating_sub(1);
+        if let Some(token) = lookup_source_token(&sources, &names, mappings, target_line, frame.col)
+        {
+          let original_file = token.source.unwrap_or("");
+          let original_line = token.src_line + 1;
+          let original_col = token.src_col;
 
-    last_idx = full_match.end();
+          let fn_str = token.name.or(frame.fn_name);
+          match fn_str {
+            Some(f) if !f.is_empty() => {
+              let _ = write!(
+                remapped,
+                "    at {f} ({original_file}:{original_line}:{original_col})"
+              );
+            }
+            _ => {
+              let _ = write!(
+                remapped,
+                "    at {original_file}:{original_line}:{original_col}"
+              );
+            }
+          }
+          continue;
+        }
+      }
+    }
+    remapped.push_str(line);
   }
 
-  remapped.push_str(&stack[last_idx..]);
   remapped
 }
 

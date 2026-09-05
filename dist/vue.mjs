@@ -1,10 +1,5 @@
-import { browserLogger, requestLogger as requestLogger$1 } from "./plugin.mjs";
+import { browserLogger, createFrameworkLogger } from "./plugin.mjs";
 //#region src/vue.ts
-function requestLogger(config) {
-	return requestLogger$1({
-		...config,
-		excludeUrls: [...config?.excludeUrls || []]
-	});
-}
+const { requestLogger, logger } = createFrameworkLogger("/@vite-plugin-vue/");
 //#endregion
-export { browserLogger, requestLogger };
+export { browserLogger, logger as default, logger, requestLogger };

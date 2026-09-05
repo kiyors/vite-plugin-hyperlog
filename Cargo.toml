@@ -9,19 +9,11 @@ version = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-base64 = "0.23.1"
-chrono = "0.4"
-colored_json = "5.0.0"
+libc = { version = "0.2", default-features = false }
 napi-derive = "3.0.0"
-oxc_allocator = "0.148.0"
-oxc_ast = "0.148.0"
-oxc_parser = "0.148.0"
-oxc_sourcemap = "8.1.2"
-oxc_span = "0.148.0"
-regex = "1.13.1"
-serde_json = "1.0.151"
 
 [dependencies.napi]
+default-features = false
 features = ["napi10"]
 version = "3.0.0"
 
@@ -29,5 +21,36 @@ version = "3.0.0"
 napi-build = "2"
 
 [profile.release]
-lto = "thin"
-strip = "symbols"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[lints.clippy]
+# 1. The Pedantic Baseline
+pedantic = { level = "warn", priority = -1 }
+
+# 2. The "No Cheating" Guard
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+
+# 3. Panic & Silent Failure Guards
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+todo = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+
+# 4. Async & Concurrency Footguns
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+let_underscore_future = "deny"
+
+# 5. Leftover Debugging
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"

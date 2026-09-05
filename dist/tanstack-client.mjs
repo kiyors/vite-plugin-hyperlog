@@ -50,9 +50,12 @@ function registerTanStackRouterLogger(router) {
 				const toLocation = state.toLocation;
 				if (!toLocation) return;
 				const pathname = toLocation.pathname || "/";
+				const matches = state.matches || [];
+				const lastMatch = matches[matches.length - 1];
+				const routeId = lastMatch?.routeId || lastMatch?.id || lastMatch?.route?.id || pathname;
 				const hotMeta = import.meta;
 				if (hotMeta.hot) hotMeta.hot.send("vite-plugin-logger:tanstack-route", {
-					routeId: pathname,
+					routeId,
 					path: pathname,
 					params: null,
 					durationMs: null,

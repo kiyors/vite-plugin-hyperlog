@@ -55,6 +55,8 @@
     "test:unit": "vitest run test/unit.test.ts",
     "test:e2e": "vitest run test/e2e.test.ts",
     "test:watch": "vitest",
+    "bench": "node --expose-gc scripts/benchmark.mjs",
+    "bench:quick": "node scripts/benchmark.mjs",
     "preversion": "napi build --platform && tsdown && git add .",
     "version": "napi build --platform && tsdown && git add index.js dist/",
     "prepare": "husky"

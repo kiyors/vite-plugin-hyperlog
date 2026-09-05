@@ -1,2 +1,2 @@
-import { a as RemappedPosition, i as requestLogger, n as RequestLoggerConfig, o as remapSourcePosition, r as browserLogger, s as remapStackTrace, t as ReqType } from "./plugin-DwLV3Bnh.mjs";
-export { type RemappedPosition, ReqType, RequestLoggerConfig, browserLogger, remapSourcePosition, remapStackTrace, requestLogger };
+import { a as logger, c as remapSourcePosition, i as createFrameworkLogger, l as remapStackTrace, n as RequestLoggerConfig, o as requestLogger, r as browserLogger, s as RemappedPosition, t as ReqType } from "./plugin-AMSmCQRy.mjs";
+export { type RemappedPosition, ReqType, RequestLoggerConfig, browserLogger, createFrameworkLogger, logger as default, logger, remapSourcePosition, remapStackTrace, requestLogger };

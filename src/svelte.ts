@@ -1,12 +1,5 @@
-import type { Plugin } from "vite";
+import { browserLogger, createFrameworkLogger, type RequestLoggerConfig } from "./plugin";
 
-import { requestLogger as coreRequestLogger, browserLogger, type RequestLoggerConfig } from "./plugin";
-
-export function requestLogger(config?: RequestLoggerConfig): Plugin {
-  return coreRequestLogger({
-    ...config,
-    excludeUrls: [...(config?.excludeUrls || [])],
-  });
-}
-
-export { browserLogger };
+export const { requestLogger, logger } = createFrameworkLogger("/@svelte-refresh");
+export { browserLogger, type RequestLoggerConfig };
+export default logger;

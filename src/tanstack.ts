@@ -52,17 +52,10 @@ export function parseRouteTreeContent(content: string): RouteMatcher[] {
       routes.add(r);
     }
   } catch {
-    // Fallback to regex in case AST parsing fails or runs in a constrained environment
-    const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
-    for (const match of matches) {
-      const p = match[1].trim();
-      if (p && !p.startsWith("/api") && !p.includes("node_modules")) {
-        routes.add(p);
-      }
-    }
+    // Ignore AST failure, fallback will catch below
   }
 
-  // If AST found nothing, try regex as extra safety
+  // Fallback to regex if AST was empty or unsupported
   if (routes.size === 0) {
     const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
     for (const match of matches) {
@@ -85,7 +78,8 @@ export function parseRouteTreeContent(content: string): RouteMatcher[] {
 
     const escaped = route.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\\\$/g, "$");
 
-    const patternRegex = "^" + escaped.replace(/\$([a-zA-Z0-9_]+)/g, "[^/]+").replace(/\/$/, "") + "\\/?$";
+    const patternRegex =
+      "^" + escaped.replace(/\$([a-zA-Z0-9_]+)?/g, (_m, p1) => (p1 ? "[^/]+" : ".*")).replace(/\/$/, "") + "\\/?$";
 
     try {
       matchers.push({
@@ -113,20 +107,14 @@ export function parseRouteTreeContent(content: string): RouteMatcher[] {
 
 const DEFAULT_EXCLUDE_URLS = ["?import", "vite_ping", "@fs", "/@vite/client"];
 const TANSTACK_EXCLUDE_PATTERNS = ["?tsr-split", "virtual:tanstack-start", "/@id/virtual:"];
+const SOURCE_MODULE_RE = /\.(?:tsx|ts|jsx|js|css)$/;
 
 function isSourceModule(url: string): boolean {
   if (url.startsWith("/api") || url.startsWith("/_serverFn")) {
     return false;
   }
   const cleanPath = url.split("?")[0];
-  return (
-    cleanPath.startsWith("/src/") &&
-    (cleanPath.endsWith(".tsx") ||
-      cleanPath.endsWith(".ts") ||
-      cleanPath.endsWith(".jsx") ||
-      cleanPath.endsWith(".js") ||
-      cleanPath.endsWith(".css"))
-  );
+  return cleanPath.startsWith("/src/") && SOURCE_MODULE_RE.test(cleanPath);
 }
 
 interface PendingServerFn {
@@ -148,7 +136,14 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
   const groupWindowMs = config?.groupServerFnWindowMs ?? 80;
 
   let routeMatchers: RouteMatcher[] = [];
+  const routeCache = new Map<string, string | null>();
   const pendingServerFns = new Map<string, PendingServerFn>();
+  const MAX_PENDING_SERVER_FNS = 250;
+
+  const exclusions = [...DEFAULT_EXCLUDE_URLS, ...(config?.excludeUrls || [])];
+  const excludedMethods = config?.excludeReqType
+    ? new Set(config.excludeReqType.map((type) => type.toUpperCase()))
+    : null;
 
   const flushServerFn = (key: string) => {
     const entry = pendingServerFns.get(key);
@@ -182,11 +177,22 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
     }
 
     const cleanPath = url.split("?")[0];
-    for (const matcher of routeMatchers) {
-      if (matcher.regex.test(cleanPath)) {
-        return matcher.pattern;
+    const cached = routeCache.get(cleanPath);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    for (let i = 0; i < routeMatchers.length; i++) {
+      if (routeMatchers[i].regex.test(cleanPath)) {
+        const pattern = routeMatchers[i].pattern;
+        if (routeCache.size > 256) routeCache.clear();
+        routeCache.set(cleanPath, pattern);
+        return pattern;
       }
     }
+
+    if (routeCache.size > 256) routeCache.clear();
+    routeCache.set(cleanPath, null);
     return null;
   };
 
@@ -203,6 +209,7 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
           if (fs.existsSync(treeAbsolutePath)) {
             const content = fs.readFileSync(treeAbsolutePath, "utf-8");
             routeMatchers = parseRouteTreeContent(content);
+            routeCache.clear();
           }
         } catch {
           // Ignore read errors
@@ -230,22 +237,22 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
         const url = req.originalUrl || "";
         const method = req.method || "GET";
 
-        if (
-          config?.excludeReqType &&
-          config.excludeReqType.some((type) => type.toLowerCase() === method.toLowerCase())
-        ) {
+        if (excludedMethods && excludedMethods.has(method.toUpperCase())) {
           return next();
         }
 
-        const exclusions = [...DEFAULT_EXCLUDE_URLS, ...(config?.excludeUrls || [])];
-        if (exclusions.some((match) => url.includes(match))) {
-          return next();
+        for (let i = 0; i < exclusions.length; i++) {
+          if (url.includes(exclusions[i])) {
+            return next();
+          }
         }
 
         // Filter out internal module compilation noise when excludeModules is enabled
         if (excludeModules) {
-          if (TANSTACK_EXCLUDE_PATTERNS.some((pattern) => url.includes(pattern))) {
-            return next();
+          for (let i = 0; i < TANSTACK_EXCLUDE_PATTERNS.length; i++) {
+            if (url.includes(TANSTACK_EXCLUDE_PATTERNS[i])) {
+              return next();
+            }
           }
           if (isSourceModule(url)) {
             return next();
@@ -280,9 +287,22 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
             if (existing) {
               existing.count += 1;
               existing.totalDuration += durationMs;
+
+              // Prevent starvation if identical calls loop rapidly
+              if (existing.count >= 20) {
+                clearTimeout(existing.timer);
+                flushServerFn(key);
+                return;
+              }
+
               clearTimeout(existing.timer);
               existing.timer = setTimeout(() => flushServerFn(key), groupWindowMs);
               return;
+            }
+
+            if (pendingServerFns.size >= MAX_PENDING_SERVER_FNS) {
+              const firstKey = pendingServerFns.keys().next().value;
+              if (firstKey) flushServerFn(firstKey);
             }
 
             const entry: PendingServerFn = {
@@ -325,5 +345,13 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
   };
 }
 
+/**
+ * Convenient unified TanStack logger plugin that registers both requestLogger and browserLogger.
+ */
+export function tanstackLogger(config?: TanStackLoggerConfig): Plugin[] {
+  return [requestLogger(config), browserLogger()];
+}
+
 export * from "./tanstack-client";
 export { browserLogger };
+export default tanstackLogger;

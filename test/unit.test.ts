@@ -265,7 +265,7 @@ describe("Native OXC SourceMap Remapping", () => {
     expect(pos?.name).toBe("App");
   });
 
-  it("remaps error stack trace frames using oxc_sourcemap and regex", () => {
+  it("remaps error stack trace frames using native sourcemap engine", () => {
     const stack = "Error: Crash\n    at bundle.js:1:6";
     const remapped = remapStackTrace(sampleSourceMap, stack);
     expect(remapped).toContain("src/App.tsx:1");

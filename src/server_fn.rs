@@ -1,22 +1,48 @@
-use base64::prelude::*;
+#[must_use]
+pub fn decode_base64_url(input: &str) -> Option<Vec<u8>> {
+  let bytes = input.as_bytes();
+  let mut buf = Vec::with_capacity(bytes.len() * 3 / 4);
+  let mut accumulator: u32 = 0;
+  let mut bits: u32 = 0;
 
+  for &b in bytes {
+    let val: u32 = match b {
+      b'A'..=b'Z' => u32::from(b - b'A'),
+      b'a'..=b'z' => u32::from(b - b'a') + 26,
+      b'0'..=b'9' => u32::from(b - b'0') + 52,
+      b'-' | b'+' => 62,
+      b'_' | b'/' => 63,
+      b'=' | b' ' | b'\r' | b'\n' => continue,
+      _ => return None,
+    };
+    accumulator = (accumulator << 6) | val;
+    bits += 6;
+    if bits >= 8 {
+      bits -= 8;
+      if let Ok(byte) = u8::try_from((accumulator >> bits) & 0xFF) {
+        buf.push(byte);
+      }
+    }
+  }
+  Some(buf)
+}
+
+use crate::json_utils::extract_json_field;
+
+#[must_use]
 pub fn decode_server_fn(path: &str) -> Option<(String, String)> {
   let b64 = path.strip_prefix("/_serverFn/")?;
   let b64_token = b64.split('/').next()?;
-  if b64_token.is_empty() {
+  // Prevent unbounded memory allocation from malicious/huge URLs
+  if b64_token.is_empty() || b64_token.len() > 4096 {
     return None;
   }
 
-  let decoded = BASE64_URL_SAFE_NO_PAD
-    .decode(b64_token)
-    .or_else(|_| BASE64_URL_SAFE.decode(b64_token))
-    .or_else(|_| BASE64_STANDARD_NO_PAD.decode(b64_token))
-    .or_else(|_| BASE64_STANDARD.decode(b64_token))
-    .ok()?;
+  let decoded = decode_base64_url(b64_token)?;
+  let decoded_str = std::str::from_utf8(&decoded).ok()?;
 
-  let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-  let export_name = json.get("export")?.as_str()?;
-  let file_path = json.get("file")?.as_str()?;
+  let export_name = extract_json_field(decoded_str, "export")?;
+  let file_path = extract_json_field(decoded_str, "file")?;
 
   let clean_export = export_name
     .strip_suffix("_createServerFn_handler")
@@ -51,5 +77,11 @@ mod tests {
   fn test_decode_server_fn_invalid_path() {
     assert!(decode_server_fn("/not_server_fn").is_none());
     assert!(decode_server_fn("/_serverFn/").is_none());
+  }
+
+  #[test]
+  fn test_decode_server_fn_oversized() {
+    let huge_token = format!("/_serverFn/{}", "a".repeat(5000));
+    assert!(decode_server_fn(&huge_token).is_none());
   }
 }

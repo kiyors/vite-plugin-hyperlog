@@ -1,62 +1,117 @@
-use std::sync::LazyLock;
-
-use regex::Regex;
+use std::fmt::Write;
 
 use crate::ansi;
 
-static STACK_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
-  Regex::new(
-    r#"^\s*(?:at\s+)?(?:(?P<fn>[a-zA-Z0-9_$<>.]+)\s*(?:\(cid:[^)]+\))?\s*(?:@|\())?(?:https?://[^/]+(?:/@fs)?)?(?P<path>/?[a-zA-Z0-9_$./@-]+(?:\.[a-zA-Z0-9]+)?):(?P<line>\d+):(?P<col>\d+)\)?"#,
-  )
-  .unwrap()
-});
+use crate::stack_trace::parse_stack_frame;
 
+#[must_use]
 pub fn colorize_json(message: &str) -> String {
-  if let Ok(val) = serde_json::from_str::<serde_json::Value>(message) {
-    if val.is_object() || val.is_array() {
-      let is_small = match &val {
-        serde_json::Value::Object(o) => {
-          o.len() <= 3 && o.values().all(|v| !v.is_object() && !v.is_array())
-        }
-        serde_json::Value::Array(a) => {
-          a.len() <= 4 && a.iter().all(|v| !v.is_object() && !v.is_array())
-        }
-        _ => false,
-      };
+  let trimmed = message.trim();
+  if message.len() > 262_144
+    || (!((trimmed.starts_with('{') && trimmed.ends_with('}'))
+      || (trimmed.starts_with('[') && trimmed.ends_with(']'))))
+  {
+    return message.to_string();
+  }
 
-      if is_small {
-        let formatter = colored_json::ColoredFormatter::new(colored_json::CompactFormatter);
-        if let Ok(s) = formatter.to_colored_json(&val, colored_json::ColorMode::On) {
-          return s;
+  let bytes = trimmed.as_bytes();
+  let len = bytes.len();
+  let mut out = String::with_capacity(len + 128);
+  let mut i = 0;
+
+  while i < len {
+    if let Some(&b) = bytes.get(i) {
+      match b {
+        b'"' => {
+          let start = i;
+          i += 1;
+          while i < len {
+            if bytes.get(i) == Some(&b'\\') {
+              i += 2;
+              continue;
+            }
+            if bytes.get(i) == Some(&b'"') {
+              i += 1;
+              break;
+            }
+            i += 1;
+          }
+          if let Some(str_token) = trimmed.get(start..i) {
+            let mut k = i;
+            while bytes.get(k).is_some_and(u8::is_ascii_whitespace) {
+              k += 1;
+            }
+            let is_key = bytes.get(k) == Some(&b':');
+
+            if is_key {
+              let _ = write!(out, "\x1b[36m{str_token}\x1b[0m");
+            } else {
+              let _ = write!(out, "\x1b[32m{str_token}\x1b[0m");
+            }
+          }
         }
-      } else if let Ok(s) = colored_json::to_colored_json(&val, colored_json::ColorMode::On) {
-        return s;
+        b'0'..=b'9' | b'-' => {
+          let start = i;
+          i += 1;
+          while i < len {
+            if let Some(&c) = bytes.get(i) {
+              if c.is_ascii_digit() || c == b'.' || c == b'e' || c == b'E' || c == b'+' || c == b'-'
+              {
+                i += 1;
+              } else {
+                break;
+              }
+            } else {
+              break;
+            }
+          }
+          if let Some(num_token) = trimmed.get(start..i) {
+            let _ = write!(out, "\x1b[33m{num_token}\x1b[0m");
+          }
+        }
+        b't' if trimmed.get(i..).is_some_and(|s| s.starts_with("true")) => {
+          out.push_str("\x1b[35mtrue\x1b[0m");
+          i += 4;
+        }
+        b'f' if trimmed.get(i..).is_some_and(|s| s.starts_with("false")) => {
+          out.push_str("\x1b[35mfalse\x1b[0m");
+          i += 5;
+        }
+        b'n' if trimmed.get(i..).is_some_and(|s| s.starts_with("null")) => {
+          out.push_str("\x1b[90mnull\x1b[0m");
+          i += 4;
+        }
+        _ => {
+          out.push(char::from(b));
+          i += 1;
+        }
       }
+    } else {
+      break;
     }
   }
-  message.to_string()
+
+  out
 }
 
+#[must_use]
 pub fn clean_error_stack(message: &str) -> String {
-  let lines: Vec<&str> = message.split('\n').collect();
-  if lines.len() <= 1 {
-    return format!("{}{}{}", ansi::RED, message, ansi::RESET);
-  }
+  let mut lines = message.lines();
+  let Some(first_line) = lines.next() else {
+    return String::new();
+  };
 
-  let mut result = Vec::with_capacity(lines.len());
-  // First line is the error message header
-  result.push(format!("{}{}{}", ansi::RED, lines[0], ansi::RESET));
+  let mut result = String::with_capacity(message.len() + 64);
+  let _ = write!(result, "{}{first_line}{}", ansi::RED, ansi::RESET);
 
-  for line in &lines[1..] {
+  for line in lines {
+    result.push('\n');
     let trimmed = line.trim();
-    if let Some(caps) = STACK_FRAME_RE.captures(trimmed) {
-      let mut path = caps.name("path").map(|m| m.as_str()).unwrap_or("");
+    if let Some(frame) = parse_stack_frame(trimmed) {
+      let mut path = frame.path;
       if let Some(stripped) = path.strip_prefix('/') {
         path = stripped;
       }
-      let line_num = caps.name("line").map(|m| m.as_str()).unwrap_or("0");
-      let col_num = caps.name("col").map(|m| m.as_str()).unwrap_or("0");
-      let fn_name = caps.name("fn").map(|m| m.as_str());
 
       let is_user_code = (path.starts_with("src/")
         || path.contains("/src/")
@@ -65,55 +120,54 @@ pub fn clean_error_stack(message: &str) -> String {
         && !path.contains("node_modules");
 
       if is_user_code {
-        let fn_suffix = match fn_name {
-          Some(f) => format!(
-            " {}in{} {}{}{}",
-            ansi::DIM,
-            ansi::RESET,
-            ansi::CYAN,
-            f,
-            ansi::RESET
-          ),
-          None => String::new(),
-        };
-        result.push(format!(
-          "  {}➜{} {}{}:{}:{}{}{}",
+        let _ = write!(
+          result,
+          "  {}➜{} {}{}:{}:{}{}",
           ansi::RED,
           ansi::RESET,
           ansi::WHITE_BOLD,
           path,
-          line_num,
-          col_num,
+          frame.line,
+          frame.col,
           ansi::RESET,
-          fn_suffix
-        ));
+        );
+        if let Some(f) = frame.fn_name {
+          let _ = write!(
+            result,
+            " {}in{} {}{f}{}",
+            ansi::DIM,
+            ansi::RESET,
+            ansi::CYAN,
+            ansi::RESET
+          );
+        }
       } else {
-        let fn_suffix = match fn_name {
-          Some(f) => format!(" in {}", f),
-          None => String::new(),
-        };
-        result.push(format!(
-          "    {}{}:{}:{}{}{}",
+        let _ = write!(
+          result,
+          "    {}{}:{}:{}",
           ansi::DIM,
           path,
-          line_num,
-          col_num,
-          fn_suffix,
-          ansi::RESET
-        ));
+          frame.line,
+          frame.col
+        );
+        if let Some(f) = frame.fn_name {
+          let _ = write!(result, " in {f}");
+        }
+        result.push_str(ansi::RESET);
       }
     } else {
-      result.push(format!("  {}{}{}", ansi::DIM, trimmed, ansi::RESET));
+      let _ = write!(result, "  {}{trimmed}{}", ansi::DIM, ansi::RESET);
     }
   }
 
-  result.join("\n")
+  result
 }
 
+#[must_use]
 pub fn format_browser_log(
-  log_type: String,
-  message: String,
-  caller: Option<String>,
+  log_type: &str,
+  message: &str,
+  caller: Option<&str>,
   repeat_count: Option<u32>,
 ) -> Option<String> {
   // Skip Hot Reloading framework noise
@@ -121,69 +175,50 @@ pub fn format_browser_log(
     return None;
   }
 
-  let time = ansi::now_time_string();
-
-  let (prefix, default_color) = match log_type.as_str() {
-    "error" => (
-      format!("{}[browser error]{}", ansi::RED, ansi::RESET),
-      ansi::RED,
-    ),
-    "warn" => (
-      format!("{}[browser warn]{} ", ansi::YELLOW, ansi::RESET),
-      ansi::YELLOW,
-    ),
-    "info" => (
-      format!("{}[browser info]{} ", ansi::CYAN, ansi::RESET),
-      ansi::CYAN,
-    ),
-    "debug" => (
-      format!("{}[browser debug]{}", ansi::DIM, ansi::RESET),
-      ansi::DIM,
-    ),
-    "time" => (
-      format!("{}[browser timer]{}", ansi::MAGENTA, ansi::RESET),
-      ansi::MAGENTA,
-    ),
-    "table" => (
-      format!("{}[browser table]{}", ansi::CYAN, ansi::RESET),
-      ansi::CYAN,
-    ),
-    _ => (
-      format!("{}[browser]{}      ", ansi::BLUE, ansi::RESET),
-      ansi::RESET,
-    ),
+  let (prefix, default_color) = match log_type {
+    "error" => (ansi::PREFIX_BROWSER_ERROR, ansi::RED),
+    "warn" => (ansi::PREFIX_BROWSER_WARN, ansi::YELLOW),
+    "info" => (ansi::PREFIX_BROWSER_INFO, ansi::CYAN),
+    "debug" => (ansi::PREFIX_BROWSER_DEBUG, ansi::DIM),
+    "time" => (ansi::PREFIX_BROWSER_TIMER, ansi::MAGENTA),
+    "table" => (ansi::PREFIX_BROWSER_TABLE, ansi::CYAN),
+    _ => (ansi::PREFIX_BROWSER_DEFAULT, ansi::RESET),
   };
 
-  let formatted_message = if log_type == "error" && message.contains("\n    at ") {
-    clean_error_stack(&message)
-  } else if message.starts_with('{') || message.starts_with('[') {
-    colorize_json(&message)
-  } else {
-    format!("{}{}{}", default_color, message, ansi::RESET)
-  };
+  let formatted_message =
+    if log_type == "error" && (message.contains("\n    at ") || message.contains('@')) {
+      clean_error_stack(message)
+    } else if message.starts_with('{') || message.starts_with('[') {
+      colorize_json(message)
+    } else {
+      format!("{default_color}{message}{}", ansi::RESET)
+    };
 
-  let caller_str = match caller {
-    Some(c) if !c.is_empty() => format!(" {}({}){}", ansi::DIM, c, ansi::RESET),
-    _ => String::new(),
-  };
+  let mut buf = String::with_capacity(message.len() + 64);
+  ansi::write_now_time(&mut buf);
 
-  let repeat_str = match repeat_count {
-    Some(count) if count > 1 => format!(" {}(x{}){}", ansi::YELLOW, count, ansi::RESET),
-    _ => String::new(),
-  };
+  write!(buf, " {prefix} {formatted_message}").ok()?;
 
-  Some(format!(
-    "{}{}{} {} {}{}{}",
-    ansi::DIM,
-    time,
-    ansi::RESET,
-    prefix,
-    formatted_message,
-    caller_str,
-    repeat_str
-  ))
+  if let Some(c) = caller {
+    if !c.is_empty() {
+      write!(buf, " {}({c}){}", ansi::DIM, ansi::RESET).ok()?;
+    }
+  }
+
+  if let Some(count) = repeat_count {
+    if count > 1 {
+      write!(buf, " {}(x{count}){}", ansi::YELLOW, ansi::RESET).ok()?;
+    }
+  }
+
+  Some(buf)
 }
 
+#[must_use]
+#[expect(
+  clippy::too_many_lines,
+  reason = "Self-contained injected client-side JavaScript bundle"
+)]
 pub fn get_browser_logger_script() -> String {
   r#"
 if (typeof window !== 'undefined' && import.meta.hot) {
@@ -193,14 +228,21 @@ if (typeof window !== 'undefined' && import.meta.hot) {
   const originalInfo = console.info;
   const originalDebug = console.debug;
   const originalTime = console.time;
+  const originalTimeLog = console.timeLog;
   const originalTimeEnd = console.timeEnd;
+  const originalCount = console.count;
+  const originalCountReset = console.countReset;
   const originalTable = console.table;
 
   const timers = new Map();
+  const counts = new Map();
 
   function safeStringify(obj) {
     const seen = new WeakSet();
     return JSON.stringify(obj, (key, value) => {
+      if (typeof value === "bigint") {
+        return value.toString() + "n";
+      }
       if (typeof value === "object" && value !== null) {
         if (seen.has(value)) return "[Circular]";
         seen.add(value);
@@ -218,6 +260,8 @@ if (typeof window !== 'undefined' && import.meta.hot) {
         if (!line) continue;
         if (
           line.includes("virtual:browser-logger") ||
+          line.includes("extractCaller") ||
+          line.includes("sendLog") ||
           line.includes("node_modules/.vite") ||
           line.includes("@vite/client")
         ) {
@@ -288,6 +332,15 @@ if (typeof window !== 'undefined' && import.meta.hot) {
       timers.set(label, performance.now());
     };
 
+    console.timeLog = function(label = 'default', ...args) {
+      if (originalTimeLog) originalTimeLog.apply(console, [label, ...args]);
+      const start = timers.get(label);
+      if (start != null) {
+        const durationMs = (performance.now() - start).toFixed(2);
+        sendLog('time', [`${label}: ${durationMs}ms`, ...args]);
+      }
+    };
+
     console.timeEnd = function(label = 'default') {
       if (originalTimeEnd) originalTimeEnd.call(console, label);
       const start = timers.get(label);
@@ -298,12 +351,25 @@ if (typeof window !== 'undefined' && import.meta.hot) {
       }
     };
 
+    console.count = function(label = 'default') {
+      if (originalCount) originalCount.call(console, label);
+      const current = (counts.get(label) || 0) + 1;
+      counts.set(label, current);
+      sendLog('debug', [`${label}: ${current}`]);
+    };
+
+    console.countReset = function(label = 'default') {
+      if (originalCountReset) originalCountReset.call(console, label);
+      counts.delete(label);
+    };
+
     window.addEventListener("error", (event) => {
       sendLog('error', ['[Uncaught Error]', event.error || event.message]);
     });
 
     window.addEventListener("unhandledrejection", (event) => {
-      sendLog('error', ['[Unhandled Promise]', event.reason]);
+      const reason = event.reason !== undefined && event.reason !== null ? event.reason : 'Unspecified rejection';
+      sendLog('error', ['[Unhandled Promise]', reason]);
     });
   }
 }
@@ -318,9 +384,9 @@ mod tests {
   #[test]
   fn test_format_browser_log_with_caller() {
     let res = format_browser_log(
-      "log".into(),
-      "User logged in".into(),
-      Some("src/components/Login.tsx:42".into()),
+      "log",
+      "User logged in",
+      Some("src/components/Login.tsx:42"),
       None,
     );
     assert!(res.is_some());
@@ -332,12 +398,7 @@ mod tests {
 
   #[test]
   fn test_format_browser_log_timer() {
-    let res = format_browser_log(
-      "time".into(),
-      "fetchData: 142.50ms".into(),
-      Some("src/api.ts:18".into()),
-      None,
-    );
+    let res = format_browser_log("time", "fetchData: 142.50ms", Some("src/api.ts:18"), None);
     assert!(res.is_some());
     let log = res.unwrap();
     assert!(log.contains("[browser timer]"));
@@ -348,9 +409,9 @@ mod tests {
   #[test]
   fn test_format_browser_log_repeat_count() {
     let res = format_browser_log(
-      "warn".into(),
-      "Deprecation warning".into(),
-      Some("src/legacy.ts:10".into()),
+      "warn",
+      "Deprecation warning",
+      Some("src/legacy.ts:10"),
       Some(4),
     );
     assert!(res.is_some());

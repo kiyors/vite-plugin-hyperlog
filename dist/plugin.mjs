@@ -571,6 +571,9 @@ const DEFAULT_EXCLUDE_URLS = [
 	"/@vite/client"
 ];
 function requestLogger(config) {
+	const exclusions = [...DEFAULT_EXCLUDE_URLS, ...config?.excludeUrls || []];
+	const excludedMethods = config?.excludeReqType ? new Set(config.excludeReqType.map((type) => type.toUpperCase())) : null;
+	const resolveRoute = config?.resolveRoute;
 	return {
 		name: "vite-plugin-request-logging-rust",
 		apply: "serve",
@@ -578,8 +581,8 @@ function requestLogger(config) {
 			server.middlewares.use((req, res, next) => {
 				const url = req.originalUrl || "";
 				const method = req.method || "GET";
-				if (config?.excludeReqType && config.excludeReqType.some((type) => type.toLowerCase() === method.toLowerCase())) return next();
-				if ([...DEFAULT_EXCLUDE_URLS, ...config?.excludeUrls || []].some((match) => url.includes(match))) return next();
+				if (excludedMethods && excludedMethods.has(method.toUpperCase())) return next();
+				for (let i = 0; i < exclusions.length; i++) if (url.includes(exclusions[i])) return next();
 				const start = performance.now();
 				let logged = false;
 				const logIt = () => {
@@ -593,8 +596,8 @@ function requestLogger(config) {
 					const contentLength = cl ? Number(cl) : null;
 					const location = res.getHeader("location");
 					const redirectLocation = location ? String(location) : null;
-					const routeName = config?.resolveRoute ? config.resolveRoute(url) : null;
-					const logString = (0, import_vite_plugin_logger.formatLogEntry)(req.originalUrl || "", req.method || "GET", status, durationMs, contentLength, redirectLocation, routeName, null);
+					const routeName = resolveRoute ? resolveRoute(url) : null;
+					const logString = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
 					if (logString) console.log(logString);
 				};
 				res.on("finish", logIt);
@@ -611,10 +614,10 @@ function browserLogger() {
 		name: "vite-plugin-browser-logger",
 		enforce: "pre",
 		resolveId(id) {
-			if (id === virtualModuleId) return resolvedVirtualModuleId;
+			if (id === virtualModuleId || id === resolvedVirtualModuleId || id.endsWith(virtualModuleId)) return resolvedVirtualModuleId;
 		},
 		load(id) {
-			if (id === resolvedVirtualModuleId) return (0, import_vite_plugin_logger.getBrowserLoggerScript)();
+			if (id === resolvedVirtualModuleId || id.endsWith(virtualModuleId)) return (0, import_vite_plugin_logger.getBrowserLoggerScript)();
 		},
 		transformIndexHtml() {
 			return [{
@@ -628,6 +631,7 @@ function browserLogger() {
 		},
 		configureServer(server) {
 			const pendingBrowserLogs = /* @__PURE__ */ new Map();
+			const MAX_PENDING_LOGS = 250;
 			const flushBrowserLog = (key) => {
 				const entry = pendingBrowserLogs.get(key);
 				if (!entry) return;
@@ -648,9 +652,18 @@ function browserLogger() {
 				const existing = pendingBrowserLogs.get(key);
 				if (existing) {
 					existing.count += 1;
+					if (existing.count >= 20) {
+						clearTimeout(existing.timer);
+						flushBrowserLog(key);
+						return;
+					}
 					clearTimeout(existing.timer);
 					existing.timer = setTimeout(() => flushBrowserLog(key), 80);
 					return;
+				}
+				if (pendingBrowserLogs.size >= MAX_PENDING_LOGS) {
+					const firstKey = pendingBrowserLogs.keys().next().value;
+					if (firstKey) flushBrowserLog(firstKey);
 				}
 				const entry = {
 					count: 1,
@@ -671,7 +684,40 @@ function browserLogger() {
 		}
 	};
 }
+/**
+* Convenient unified plugin that registers both requestLogger and browserLogger in one call.
+*
+* @example
+* ```ts
+* import logger from "@kiyors/vite-plugin-logger";
+* export default defineConfig({
+*   plugins: [logger()],
+* });
+* ```
+*/
+function logger(config) {
+	return [requestLogger(config), browserLogger()];
+}
+/**
+* Factory helper for framework-specific adapters (React, Solid, Svelte, Vue)
+* that injects default framework-specific exclusions while keeping behavior unified.
+*/
+function createFrameworkLogger(defaultExclude) {
+	function reqLogger(config) {
+		return requestLogger({
+			...config,
+			excludeUrls: [defaultExclude, ...config?.excludeUrls || []]
+		});
+	}
+	function log(config) {
+		return [reqLogger(config), browserLogger()];
+	}
+	return {
+		requestLogger: reqLogger,
+		logger: log
+	};
+}
 //#endregion
 var remapSourcePosition = import_vite_plugin_logger.remapSourcePosition;
 var remapStackTrace = import_vite_plugin_logger.remapStackTrace;
-export { browserLogger, remapSourcePosition, remapStackTrace, requestLogger, require_vite_plugin_logger as t };
+export { browserLogger, createFrameworkLogger, logger as default, logger, remapSourcePosition, remapStackTrace, requestLogger, require_vite_plugin_logger as t };

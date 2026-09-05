@@ -1,10 +1,5 @@
-import { browserLogger, requestLogger as requestLogger$1 } from "./plugin.mjs";
+import { browserLogger, createFrameworkLogger } from "./plugin.mjs";
 //#region src/svelte.ts
-function requestLogger(config) {
-	return requestLogger$1({
-		...config,
-		excludeUrls: [...config?.excludeUrls || []]
-	});
-}
+const { requestLogger, logger } = createFrameworkLogger("/@svelte-refresh");
 //#endregion
-export { browserLogger, requestLogger };
+export { browserLogger, logger as default, logger, requestLogger };

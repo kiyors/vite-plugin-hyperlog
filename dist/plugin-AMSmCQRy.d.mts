@@ -18,5 +18,25 @@ interface RequestLoggerConfig {
 }
 declare function requestLogger(config?: RequestLoggerConfig): Plugin;
 declare function browserLogger(): Plugin;
+/**
+ * Convenient unified plugin that registers both requestLogger and browserLogger in one call.
+ *
+ * @example
+ * ```ts
+ * import logger from "@kiyors/vite-plugin-logger";
+ * export default defineConfig({
+ *   plugins: [logger()],
+ * });
+ * ```
+ */
+declare function logger(config?: RequestLoggerConfig): Plugin[];
+/**
+ * Factory helper for framework-specific adapters (React, Solid, Svelte, Vue)
+ * that injects default framework-specific exclusions while keeping behavior unified.
+ */
+declare function createFrameworkLogger(defaultExclude: string): {
+  requestLogger: (config?: RequestLoggerConfig) => Plugin;
+  logger: (config?: RequestLoggerConfig) => Plugin[];
+};
 //#endregion
-export { RemappedPosition as a, requestLogger as i, RequestLoggerConfig as n, remapSourcePosition as o, browserLogger as r, remapStackTrace as s, ReqType as t };
+export { logger as a, remapSourcePosition as c, createFrameworkLogger as i, remapStackTrace as l, RequestLoggerConfig as n, requestLogger as o, browserLogger as r, RemappedPosition as s, ReqType as t };

@@ -9,13 +9,7 @@ function parseRouteTreeContent(content) {
 	try {
 		const astRoutes = (0, import_vite_plugin_logger.parseRouteTreeAst)(content);
 		for (const r of astRoutes) routes.add(r);
-	} catch {
-		const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
-		for (const match of matches) {
-			const p = match[1].trim();
-			if (p && !p.startsWith("/api") && !p.includes("node_modules")) routes.add(p);
-		}
-	}
+	} catch {}
 	if (routes.size === 0) {
 		const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
 		for (const match of matches) {
@@ -32,7 +26,7 @@ function parseRouteTreeContent(content) {
 			});
 			continue;
 		}
-		const patternRegex = "^" + route.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\\\$/g, "$").replace(/\$([a-zA-Z0-9_]+)/g, "[^/]+").replace(/\/$/, "") + "\\/?$";
+		const patternRegex = "^" + route.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\\\$/g, "$").replace(/\$([a-zA-Z0-9_]+)?/g, (_m, p1) => p1 ? "[^/]+" : ".*").replace(/\/$/, "") + "\\/?$";
 		try {
 			matchers.push({
 				pattern: route,
@@ -59,10 +53,11 @@ const TANSTACK_EXCLUDE_PATTERNS = [
 	"virtual:tanstack-start",
 	"/@id/virtual:"
 ];
+const SOURCE_MODULE_RE = /\.(?:tsx|ts|jsx|js|css)$/;
 function isSourceModule(url) {
 	if (url.startsWith("/api") || url.startsWith("/_serverFn")) return false;
 	const cleanPath = url.split("?")[0];
-	return cleanPath.startsWith("/src/") && (cleanPath.endsWith(".tsx") || cleanPath.endsWith(".ts") || cleanPath.endsWith(".jsx") || cleanPath.endsWith(".js") || cleanPath.endsWith(".css"));
+	return cleanPath.startsWith("/src/") && SOURCE_MODULE_RE.test(cleanPath);
 }
 function requestLogger(config) {
 	const excludeModules = config?.excludeModules ?? true;
@@ -70,7 +65,11 @@ function requestLogger(config) {
 	const groupServerFn = config?.groupServerFn ?? true;
 	const groupWindowMs = config?.groupServerFnWindowMs ?? 80;
 	let routeMatchers = [];
+	const routeCache = /* @__PURE__ */ new Map();
 	const pendingServerFns = /* @__PURE__ */ new Map();
+	const MAX_PENDING_SERVER_FNS = 250;
+	const exclusions = [...DEFAULT_EXCLUDE_URLS, ...config?.excludeUrls || []];
+	const excludedMethods = config?.excludeReqType ? new Set(config.excludeReqType.map((type) => type.toUpperCase())) : null;
 	const flushServerFn = (key) => {
 		const entry = pendingServerFns.get(key);
 		if (!entry) return;
@@ -86,7 +85,16 @@ function requestLogger(config) {
 		}
 		if (!matchRouteTree || routeMatchers.length === 0) return null;
 		const cleanPath = url.split("?")[0];
-		for (const matcher of routeMatchers) if (matcher.regex.test(cleanPath)) return matcher.pattern;
+		const cached = routeCache.get(cleanPath);
+		if (cached !== void 0) return cached;
+		for (let i = 0; i < routeMatchers.length; i++) if (routeMatchers[i].regex.test(cleanPath)) {
+			const pattern = routeMatchers[i].pattern;
+			if (routeCache.size > 256) routeCache.clear();
+			routeCache.set(cleanPath, pattern);
+			return pattern;
+		}
+		if (routeCache.size > 256) routeCache.clear();
+		routeCache.set(cleanPath, null);
 		return null;
 	};
 	return {
@@ -97,7 +105,10 @@ function requestLogger(config) {
 			const treeAbsolutePath = path.resolve(server.config.root, treeRelativePath);
 			const loadRoutes = () => {
 				try {
-					if (fs.existsSync(treeAbsolutePath)) routeMatchers = parseRouteTreeContent(fs.readFileSync(treeAbsolutePath, "utf-8"));
+					if (fs.existsSync(treeAbsolutePath)) {
+						routeMatchers = parseRouteTreeContent(fs.readFileSync(treeAbsolutePath, "utf-8"));
+						routeCache.clear();
+					}
 				} catch {}
 			};
 			loadRoutes();
@@ -113,10 +124,10 @@ function requestLogger(config) {
 			server.middlewares.use((req, res, next) => {
 				const url = req.originalUrl || "";
 				const method = req.method || "GET";
-				if (config?.excludeReqType && config.excludeReqType.some((type) => type.toLowerCase() === method.toLowerCase())) return next();
-				if ([...DEFAULT_EXCLUDE_URLS, ...config?.excludeUrls || []].some((match) => url.includes(match))) return next();
+				if (excludedMethods && excludedMethods.has(method.toUpperCase())) return next();
+				for (let i = 0; i < exclusions.length; i++) if (url.includes(exclusions[i])) return next();
 				if (excludeModules) {
-					if (TANSTACK_EXCLUDE_PATTERNS.some((pattern) => url.includes(pattern))) return next();
+					for (let i = 0; i < TANSTACK_EXCLUDE_PATTERNS.length; i++) if (url.includes(TANSTACK_EXCLUDE_PATTERNS[i])) return next();
 					if (isSourceModule(url)) return next();
 				}
 				const start = performance.now();
@@ -139,9 +150,18 @@ function requestLogger(config) {
 						if (existing) {
 							existing.count += 1;
 							existing.totalDuration += durationMs;
+							if (existing.count >= 20) {
+								clearTimeout(existing.timer);
+								flushServerFn(key);
+								return;
+							}
 							clearTimeout(existing.timer);
 							existing.timer = setTimeout(() => flushServerFn(key), groupWindowMs);
 							return;
+						}
+						if (pendingServerFns.size >= MAX_PENDING_SERVER_FNS) {
+							const firstKey = pendingServerFns.keys().next().value;
+							if (firstKey) flushServerFn(firstKey);
 						}
 						const entry = {
 							count: 1,
@@ -167,5 +187,11 @@ function requestLogger(config) {
 		}
 	};
 }
+/**
+* Convenient unified TanStack logger plugin that registers both requestLogger and browserLogger.
+*/
+function tanstackLogger(config) {
+	return [requestLogger(config), browserLogger()];
+}
 //#endregion
-export { browserLogger, parseRouteTreeContent, registerTanStackRouterLogger, requestLogger };
+export { browserLogger, tanstackLogger as default, tanstackLogger, parseRouteTreeContent, registerTanStackRouterLogger, requestLogger };

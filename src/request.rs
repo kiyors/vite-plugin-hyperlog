@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use crate::ansi;
 use crate::server_fn;
 
@@ -10,6 +12,7 @@ pub enum RequestCategory {
   Route,
 }
 
+#[must_use]
 pub fn classify_path(path: &str) -> RequestCategory {
   if path.starts_with("/_serverFn") {
     RequestCategory::ServerFn
@@ -24,169 +27,182 @@ pub fn classify_path(path: &str) -> RequestCategory {
   }
 }
 
+#[inline]
 fn is_asset_path(path: &str) -> bool {
-  path.ends_with(".css")
-    || path.ends_with(".svg")
-    || path.ends_with(".png")
-    || path.ends_with(".ico")
-    || path.ends_with(".jpg")
-    || path.ends_with(".jpeg")
-    || path.ends_with(".webp")
-    || path.ends_with(".avif")
-    || path.ends_with(".woff")
-    || path.ends_with(".woff2")
-    || path.ends_with(".ttf")
-    || path.ends_with(".map")
-    || path.ends_with(".json")
-    || path.ends_with(".wasm")
+  if let Some((_, ext)) = path.rsplit_once('.') {
+    matches!(
+      ext,
+      "css"
+        | "svg"
+        | "png"
+        | "ico"
+        | "jpg"
+        | "jpeg"
+        | "webp"
+        | "avif"
+        | "woff"
+        | "woff2"
+        | "ttf"
+        | "map"
+        | "json"
+        | "wasm"
+    )
+  } else {
+    false
+  }
 }
 
+#[inline]
 fn is_module_path(path: &str) -> bool {
   path.starts_with("/@id/")
     || path.starts_with("/@fs/")
     || path.starts_with("/@vite/")
     || path.starts_with("/node_modules/")
-    || path.ends_with(".js")
-    || path.ends_with(".mjs")
-    || path.ends_with(".cjs")
-    || path.ends_with(".ts")
-    || path.ends_with(".tsx")
-    || path.ends_with(".jsx")
-    || path.ends_with(".vue")
-    || path.ends_with(".svelte")
+    || if let Some((_, ext)) = path.rsplit_once('.') {
+      matches!(
+        ext,
+        "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "vue" | "svelte"
+      )
+    } else {
+      false
+    }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[must_use]
+#[expect(
+  clippy::too_many_arguments,
+  reason = "Matches JS formatLogEntry signature with 8 arguments"
+)]
+#[expect(
+  clippy::too_many_lines,
+  reason = "Comprehensive log line formatting for various request categories"
+)]
 pub fn format_log_entry(
-  original_url: String,
-  method: String,
+  original_url: &str,
+  method: &str,
   status: u32,
   duration_ms: f64,
   content_length: Option<f64>,
-  redirect_location: Option<String>,
-  route_name: Option<String>,
+  redirect_location: Option<&str>,
+  route_name: Option<&str>,
   repeat_count: Option<u32>,
 ) -> Option<String> {
   let (path, query) = match original_url.split_once('?') {
     Some((p, q)) => (p, Some(q)),
-    None => (original_url.as_str(), None),
+    None => (original_url, None),
   };
 
   let category = classify_path(path);
 
   let label = match category {
-    RequestCategory::ServerFn => format!("{}[server-fn]{}", ansi::MAGENTA, ansi::RESET),
-    RequestCategory::Api => format!("{}[api]{}", ansi::MAGENTA, ansi::RESET),
-    RequestCategory::Asset => format!("{}[asset]{}", ansi::DIM, ansi::RESET),
-    RequestCategory::Module => format!("{}[module]{}", ansi::DIM, ansi::RESET),
-    RequestCategory::Route => format!("{}[route]{}", ansi::CYAN, ansi::RESET),
+    RequestCategory::ServerFn => ansi::LABEL_SERVER_FN,
+    RequestCategory::Api => ansi::LABEL_API,
+    RequestCategory::Asset => ansi::LABEL_ASSET,
+    RequestCategory::Module => ansi::LABEL_MODULE,
+    RequestCategory::Route => ansi::LABEL_ROUTE,
   };
 
   let status_color = ansi::status_color(status);
-  let method_color = ansi::method_color(&method);
+  let method_color = ansi::method_color(method);
+  let duration_color = ansi::duration_color(duration_ms);
 
-  let query_string = match query {
-    Some(q) => format!("?{}{}{}", ansi::DIM, q, ansi::RESET),
-    None => String::new(),
-  };
+  let mut buf = String::with_capacity(160);
+  ansi::write_now_time(&mut buf);
 
-  let target_string = match category {
+  write!(
+    buf,
+    " {} {}{status}{} {}{method:<6}{} ",
+    label,
+    status_color,
+    ansi::RESET,
+    method_color,
+    ansi::RESET,
+  )
+  .ok()?;
+
+  match category {
     RequestCategory::ServerFn => {
       if let Some((func_name, file_name)) = server_fn::decode_server_fn(path) {
-        let fail_icon = if status >= 400 {
-          format!(" {}❌{}", ansi::RED, ansi::RESET)
-        } else {
-          String::new()
-        };
-        format!(
-          "{}{}{} {}({}){}{}",
+        write!(
+          buf,
+          "{}{func_name}{} {}({file_name}){}",
           ansi::CYAN_BOLD,
-          func_name,
           ansi::RESET,
           ansi::DIM,
-          file_name,
           ansi::RESET,
-          fail_icon
         )
+        .ok()?;
+        if status >= 400 {
+          write!(buf, " {}❌{}", ansi::RED, ansi::RESET).ok()?;
+        }
       } else {
-        format!("{}{}", path, query_string)
+        buf.push_str(path);
+        if let Some(q) = query {
+          write!(buf, "?{}{q}{}", ansi::DIM, ansi::RESET).ok()?;
+        }
       }
     }
     RequestCategory::Asset | RequestCategory::Module => {
-      format!("{}{}{}{}", ansi::DIM, path, query_string, ansi::RESET)
+      write!(buf, "{}{path}", ansi::DIM).ok()?;
+      if let Some(q) = query {
+        write!(buf, "?{q}").ok()?;
+      }
+      buf.push_str(ansi::RESET);
     }
     RequestCategory::Route => {
-      if let Some(ref loc) = redirect_location {
-        format!(
-          "{}{}{} ➜ {}{}{}",
+      if let Some(loc) = redirect_location {
+        write!(
+          buf,
+          "{}{path}{} ➜ {}{loc}{}",
           ansi::WHITE_BOLD,
-          path,
           ansi::RESET,
           ansi::CYAN,
-          loc,
-          ansi::RESET
-        )
-      } else if let Some(ref r_name) = route_name {
-        format!(
-          "{}{}{}{} {}[{}]{}",
-          ansi::WHITE_BOLD,
-          path,
           ansi::RESET,
-          query_string,
-          ansi::DIM,
-          r_name,
-          ansi::RESET
         )
+        .ok()?;
+      } else if let Some(r_name) = route_name {
+        write!(buf, "{}{path}{}", ansi::WHITE_BOLD, ansi::RESET).ok()?;
+        if let Some(q) = query {
+          write!(buf, "?{}{q}{}", ansi::DIM, ansi::RESET).ok()?;
+        }
+        write!(buf, " {}[{r_name}]{}", ansi::DIM, ansi::RESET).ok()?;
       } else {
-        format!(
-          "{}{}{}{}",
-          ansi::WHITE_BOLD,
-          path,
-          ansi::RESET,
-          query_string
-        )
+        write!(buf, "{}{path}{}", ansi::WHITE_BOLD, ansi::RESET).ok()?;
+        if let Some(q) = query {
+          write!(buf, "?{}{q}{}", ansi::DIM, ansi::RESET).ok()?;
+        }
       }
     }
     RequestCategory::Api => {
-      format!("{}{}", path, query_string)
+      buf.push_str(path);
+      if let Some(q) = query {
+        write!(buf, "?{}{q}{}", ansi::DIM, ansi::RESET).ok()?;
+      }
     }
-  };
+  }
 
-  let duration_color = ansi::duration_color(duration_ms);
-
-  let size_string = match content_length {
-    Some(bytes) if bytes > 0.0 => {
-      format!(" {}{:.1}kB{}", ansi::DIM, bytes / 1024.0, ansi::RESET)
-    }
-    _ => String::new(),
-  };
-
-  let repeat_string = match repeat_count {
-    Some(count) if count > 1 => format!(" {}(x{}){}", ansi::YELLOW, count, ansi::RESET),
-    _ => String::new(),
-  };
-
-  let time = ansi::now_time_string();
-
-  Some(format!(
-    "{}{}{} {} {}{}{} {}{:<6}{} {} {}{:.2}ms{}{}{}",
-    ansi::DIM,
-    time,
-    ansi::RESET,
-    label,
-    status_color,
-    status,
-    ansi::RESET,
-    method_color,
-    method,
-    ansi::RESET,
-    target_string,
+  write!(
+    buf,
+    " {}{:.2}ms{}",
     duration_color,
     duration_ms,
-    ansi::RESET,
-    size_string,
-    repeat_string
-  ))
+    ansi::RESET
+  )
+  .ok()?;
+
+  if let Some(bytes) = content_length {
+    if bytes > 0.0 {
+      write!(buf, " {}{:.1}kB{}", ansi::DIM, bytes / 1024.0, ansi::RESET).ok()?;
+    }
+  }
+
+  if let Some(count) = repeat_count {
+    if count > 1 {
+      write!(buf, " {}(x{}){}", ansi::YELLOW, count, ansi::RESET).ok()?;
+    }
+  }
+
+  Some(buf)
 }
 
 #[cfg(test)]
@@ -206,8 +222,8 @@ mod tests {
 
   #[test]
   fn test_format_log_entry_server_fn() {
-    let url = "/_serverFn/eyJmaWxlIjoiL3NyYy9yb3V0ZXMvX19yb290LnRzeD90c3Mtc2VydmVyZm4tc3BsaXQiLCJleHBvcnQiOiJnZXRBdXRoU2Vzc2lvbl9jcmVhdGVTZXJ2ZXJGbl9oYW5kbGVyIn0".to_string();
-    let res = format_log_entry(url, "GET".into(), 200, 18.82, None, None, None, Some(3));
+    let url = "/_serverFn/eyJmaWxlIjoiL3NyYy9yb3V0ZXMvX19yb290LnRzeD90c3Mtc2VydmVyZm4tc3BsaXQiLCJleHBvcnQiOiJnZXRBdXRoU2Vzc2lvbl9jcmVhdGVTZXJ2ZXJGbl9oYW5kbGVyIn0";
+    let res = format_log_entry(url, "GET", 200, 18.82, None, None, None, Some(3));
     assert!(res.is_some());
     let log = res.unwrap();
     assert!(log.contains("[server-fn]"));
@@ -218,16 +234,7 @@ mod tests {
 
   #[test]
   fn test_format_log_entry_redirect() {
-    let res = format_log_entry(
-      "/".into(),
-      "GET".into(),
-      307,
-      100.0,
-      None,
-      Some("/login".into()),
-      None,
-      None,
-    );
+    let res = format_log_entry("/", "GET", 307, 100.0, None, Some("/login"), None, None);
     assert!(res.is_some());
     let log = res.unwrap();
     assert!(log.contains("[route]"));
@@ -238,13 +245,13 @@ mod tests {
   #[test]
   fn test_format_log_entry_route_name() {
     let res = format_log_entry(
-      "/team-alpha/projects/123".into(),
-      "GET".into(),
+      "/team-alpha/projects/123",
+      "GET",
       200,
       35.0,
       None,
       None,
-      Some("/$teamId/projects/$projectId".into()),
+      Some("/$teamId/projects/$projectId"),
       None,
     );
     assert!(res.is_some());

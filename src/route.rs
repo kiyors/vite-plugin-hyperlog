@@ -1,47 +1,31 @@
+use std::fmt::Write;
+
 use crate::ansi;
 
+#[must_use]
 pub fn format_route_log(
-  route_id: String,
-  path: String,
-  params: Option<String>,
+  route_id: &str,
+  path: &str,
+  params: Option<&str>,
   duration_ms: Option<f64>,
   is_preload: Option<bool>,
 ) -> Option<String> {
-  let time = ansi::now_time_string();
   let preload = is_preload.unwrap_or(false);
 
   let label = if preload {
-    format!("{}[preload]{}", ansi::YELLOW, ansi::RESET)
+    ansi::LABEL_PRELOAD
   } else {
-    format!("{}[route]{}  ", ansi::CYAN, ansi::RESET)
+    ansi::LABEL_ROUTE_PAD
   };
 
   let action_symbol = if preload { "⤓" } else { "➜" };
 
-  let duration_str = match duration_ms {
-    Some(ms) => {
-      let color = ansi::duration_color(ms);
-      if preload {
-        format!(" {}(preloaded in {:.1}ms){}", color, ms, ansi::RESET)
-      } else {
-        format!(" {}({:.1}ms){}", color, ms, ansi::RESET)
-      }
-    }
-    None => String::new(),
-  };
+  let mut buf = String::with_capacity(128);
+  ansi::write_now_time(&mut buf);
 
-  let params_str = match params {
-    Some(p) if !p.is_empty() && p != "{}" => {
-      format!(" {}(params: {}){}", ansi::DIM, p, ansi::RESET)
-    }
-    _ => String::new(),
-  };
-
-  Some(format!(
-    "{}{}{} {} {} {}{}{}  {}[{}]{}{}{}",
-    ansi::DIM,
-    time,
-    ansi::RESET,
+  write!(
+    buf,
+    " {} {} {}{}{}  {}[{}]{}",
     label,
     action_symbol,
     ansi::WHITE_BOLD,
@@ -50,9 +34,25 @@ pub fn format_route_log(
     ansi::DIM,
     route_id,
     ansi::RESET,
-    params_str,
-    duration_str
-  ))
+  )
+  .ok()?;
+
+  if let Some(p) = params {
+    if !p.is_empty() && p != "{}" {
+      write!(buf, " {}(params: {}){}", ansi::DIM, p, ansi::RESET).ok()?;
+    }
+  }
+
+  if let Some(ms) = duration_ms {
+    let color = ansi::duration_color(ms);
+    if preload {
+      write!(buf, " {}(preloaded in {:.1}ms){}", color, ms, ansi::RESET).ok()?;
+    } else {
+      write!(buf, " {}({:.1}ms){}", color, ms, ansi::RESET).ok()?;
+    }
+  }
+
+  Some(buf)
 }
 
 #[cfg(test)]
@@ -62,9 +62,9 @@ mod tests {
   #[test]
   fn test_format_route_log_navigation() {
     let res = format_route_log(
-      "/$teamId/projects".into(),
-      "/my-team/projects".into(),
-      Some("{\"teamId\":\"my-team\"}".into()),
+      "/$teamId/projects",
+      "/my-team/projects",
+      Some("{\"teamId\":\"my-team\"}"),
       Some(24.5),
       Some(false),
     );
@@ -80,8 +80,8 @@ mod tests {
   #[test]
   fn test_format_route_log_preload() {
     let res = format_route_log(
-      "/$teamId/settings".into(),
-      "/$teamId/settings".into(),
+      "/$teamId/settings",
+      "/$teamId/settings",
       None,
       Some(12.0),
       Some(true),

@@ -1,4 +1,4 @@
-import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-DwLV3Bnh.mjs";
+import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-AMSmCQRy.mjs";
 import { TanStackLocation, TanStackResolvedState, TanStackRouteMatch, TanStackRouterLike, registerTanStackRouterLogger } from "./tanstack-client.mjs";
 import { Plugin } from "vite";
 //#region src/tanstack.d.ts
@@ -35,5 +35,9 @@ interface RouteMatcher {
 }
 declare function parseRouteTreeContent(content: string): RouteMatcher[];
 declare function requestLogger(config?: TanStackLoggerConfig): Plugin;
+/**
+ * Convenient unified TanStack logger plugin that registers both requestLogger and browserLogger.
+ */
+declare function tanstackLogger(config?: TanStackLoggerConfig): Plugin[];
 //#endregion
-export { RouteMatcher, TanStackLocation, TanStackLoggerConfig, TanStackResolvedState, TanStackRouteMatch, TanStackRouterLike, browserLogger, parseRouteTreeContent, registerTanStackRouterLogger, requestLogger };
+export { RouteMatcher, TanStackLocation, TanStackLoggerConfig, TanStackResolvedState, TanStackRouteMatch, TanStackRouterLike, browserLogger, tanstackLogger as default, tanstackLogger, parseRouteTreeContent, registerTanStackRouterLogger, requestLogger };
