@@ -51,6 +51,81 @@ requestLogger({
 });
 ```
 
+### TanStack Start & TanStack Router
+
+For TanStack applications, import from `@kiyors/vite-plugin-logger/tanstack`. It includes tailored optimizations:
+
+- **Server Function Decoding**: Automatically decodes `/_serverFn` base64 endpoints to display human-readable function names and source files (e.g. `[server-fn] 200 GET getAuthSession (routes/__root.tsx) 18.82ms`), flagging errors with `❌`.
+- **Duplicate Batching**: Groups and debounces consecutive duplicate server function calls (e.g. `(x5)`) during component mounts and revalidations.
+- **Route Pattern Matching**: Reads `src/routeTree.gen.ts` to display parameterized route patterns (e.g. `/$teamId/channels/$channelId`) alongside the requested URL.
+- **Module Noise Filtering**: Automatically filters out internal Vite `.tsx`/`.ts` module compilation noise and code-split queries (`?tsr-split=component`).
+
+```typescript
+// vite.config.ts
+import { defineConfig } from "vite";
+import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger/tanstack";
+
+export default defineConfig({
+  plugins: [
+    requestLogger({
+      // Exclude internal module compilation noise (default: true)
+      excludeModules: true,
+      // Automatically match URLs to route patterns in routeTree.gen.ts (default: true)
+      matchRouteTree: true,
+      // Group and debounce repeated server functions (default: true)
+      groupServerFn: true,
+    }),
+    browserLogger(),
+  ],
+});
+```
+
+#### Client-Side SPA Route Logger
+
+Because client-side SPA navigations occur inside the browser without triggering full-page HTTP requests, you can register the client-side route subscriber to stream route transitions and preloads straight to your dev terminal:
+
+```typescript
+// src/router.tsx (or your client router entry)
+import { createRouter } from "@tanstack/react-router";
+import { registerTanStackRouterLogger } from "@kiyors/vite-plugin-logger/tanstack";
+import { routeTree } from "./routeTree.gen";
+
+export const router = createRouter({ routeTree });
+
+// Log client-side SPA transitions and preloads to your dev terminal
+registerTanStackRouterLogger(router);
+```
+
+##### Terminal Output Example
+
+```text
+22:56:26 [route]     307 GET / ➜ /login?redirect=%2F 120.50ms
+22:56:26 [route]     200 GET /login (route: /login) 45.20ms
+22:57:03 [server-fn] 200 GET getAuthSession (routes/__root.tsx) 18.82ms (x2)
+22:57:03 [server-fn] 200 GET getWorkspaces (lib/workspace-loader.ts) 14.28ms
+22:58:01 [route]     ➜ /team-alpha/issues  [/$teamId/issues]  (24.5ms)
+22:58:05 [preload]   ⤓ /$teamId/settings  (preloaded in 12.0ms)
+```
+
+### Enhanced Browser Logging
+
+`browserLogger` captures client-side events via WebSockets and formats them natively with Rust:
+
+- **Clickable Source Callers**: Automatically resolves caller locations (e.g. `(src/components/Login.tsx:42)`) so you can cmd-click directly to your code in modern terminals (VS Code, iTerm, Warp, Ghostty).
+- **ANSI Syntax Highlighting**: Objects and JSON logged from the browser are tokenized with colorized keys, strings, numbers, and booleans.
+- **Timer Support**: Supports `console.time('label')` and `console.timeEnd('label')` to track client-side performance.
+- **Intelligent Stack Trace Cleaning**: On errors, highlights user application frames while dimming `node_modules` and framework noise.
+- **Flood Protection**: Rapid repetitive logs (e.g. from render loops or scroll listeners) are debounced and collapsed with a repeat counter (`(x5)`).
+
+```text
+22:56:51 [browser]       User signed in  (src/components/Login.tsx:42)
+22:57:05 [browser timer] loadData: 48.20ms  (src/routes/dashboard.tsx:88)
+22:57:10 [browser warn]  Slow render detected (x3)  (src/view.tsx:15)
+22:57:15 [browser error] Error: Failed to fetch  (src/lib/api.ts:25)
+  ➜ src/lib/api.ts:25:11 in fetchUser
+    node_modules/.vite/deps/react.js:124:19
+```
+
 That's it!
 
 - Every HTTP request to the Vite Dev Server will now be tracked, formatted, and styled by Rust.

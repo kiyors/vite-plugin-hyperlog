@@ -3,8 +3,8 @@ import { createRequire } from "node:module";
 var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod), cb = null), mod.exports);
 var __require = /* #__PURE__ */ (() => createRequire(import.meta.url))();
 //#endregion
-//#region src/plugin.ts
-var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module) => {
+//#region index.js
+var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	const { readFileSync } = __require("fs");
 	let nativeBinding = null;
 	const loadErrors = [];
@@ -555,8 +555,12 @@ var import_vite_plugin_logger = (/* @__PURE__ */ __commonJSMin(((exports, module
 	module.exports = nativeBinding;
 	module.exports.formatBrowserLog = nativeBinding.formatBrowserLog;
 	module.exports.formatLogEntry = nativeBinding.formatLogEntry;
+	module.exports.formatRouteLog = nativeBinding.formatRouteLog;
 	module.exports.getBrowserLoggerScript = nativeBinding.getBrowserLoggerScript;
-})))();
+}));
+//#endregion
+//#region src/plugin.ts
+var import_vite_plugin_logger = require_vite_plugin_logger();
 const DEFAULT_EXCLUDE_URLS = [
 	"?import",
 	"vite_ping",
@@ -584,7 +588,10 @@ function requestLogger(config) {
 					const status = res.statusCode;
 					const cl = res.getHeader("content-length");
 					const contentLength = cl ? Number(cl) : null;
-					const logString = (0, import_vite_plugin_logger.formatLogEntry)(req.originalUrl || "", req.method || "GET", status, durationMs, contentLength);
+					const location = res.getHeader("location");
+					const redirectLocation = location ? String(location) : null;
+					const routeName = config?.resolveRoute ? config.resolveRoute(url) : null;
+					const logString = (0, import_vite_plugin_logger.formatLogEntry)(req.originalUrl || "", req.method || "GET", status, durationMs, contentLength, redirectLocation, routeName, null);
 					if (logString) console.log(logString);
 				};
 				res.on("finish", logIt);
@@ -617,13 +624,49 @@ function browserLogger() {
 			}];
 		},
 		configureServer(server) {
-			server.ws.on("tameio:browser-log", (data) => {
-				const { type, message } = data;
-				const logString = (0, import_vite_plugin_logger.formatBrowserLog)(type, message);
+			const pendingBrowserLogs = /* @__PURE__ */ new Map();
+			const flushBrowserLog = (key) => {
+				const entry = pendingBrowserLogs.get(key);
+				if (!entry) return;
+				pendingBrowserLogs.delete(key);
+				const logString = (0, import_vite_plugin_logger.formatBrowserLog)(entry.type, entry.message, entry.caller, entry.count > 1 ? entry.count : null);
 				if (logString) console.log(logString);
+			};
+			server.httpServer?.on("close", () => {
+				for (const [key, entry] of pendingBrowserLogs.entries()) {
+					clearTimeout(entry.timer);
+					flushBrowserLog(key);
+				}
 			});
+			const handleBrowserLog = (data) => {
+				const { type, message, caller } = data;
+				const callerStr = caller ?? null;
+				const key = `${type}:${message}:${callerStr ?? ""}`;
+				const existing = pendingBrowserLogs.get(key);
+				if (existing) {
+					existing.count += 1;
+					clearTimeout(existing.timer);
+					existing.timer = setTimeout(() => flushBrowserLog(key), 80);
+					return;
+				}
+				const entry = {
+					count: 1,
+					type,
+					message,
+					caller: callerStr,
+					timer: setTimeout(() => flushBrowserLog(key), 80)
+				};
+				pendingBrowserLogs.set(key, entry);
+			};
+			const handleTanStackRoute = (data) => {
+				const { routeId, path, params, durationMs, isPreload } = data;
+				const logString = (0, import_vite_plugin_logger.formatRouteLog)(routeId || path, path, params ?? null, durationMs ? Number(durationMs) : null, Boolean(isPreload));
+				if (logString) console.log(logString);
+			};
+			server.ws.on("vite-plugin-logger:browser-log", handleBrowserLog);
+			server.ws.on("vite-plugin-logger:tanstack-route", handleTanStackRoute);
 		}
 	};
 }
 //#endregion
-export { browserLogger, requestLogger };
+export { browserLogger, requestLogger, require_vite_plugin_logger as t };

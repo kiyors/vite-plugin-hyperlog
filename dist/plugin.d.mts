@@ -4,6 +4,7 @@ type ReqType = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD" 
 interface RequestLoggerConfig {
   excludeReqType?: ReqType[];
   excludeUrls?: string[];
+  resolveRoute?: (url: string) => string | undefined | null;
 }
 declare function requestLogger(config?: RequestLoggerConfig): Plugin;
 declare function browserLogger(): Plugin;

@@ -702,4 +702,5 @@ if (!nativeBinding) {
 module.exports = nativeBinding
 module.exports.formatBrowserLog = nativeBinding.formatBrowserLog
 module.exports.formatLogEntry = nativeBinding.formatLogEntry
+module.exports.formatRouteLog = nativeBinding.formatRouteLog
 module.exports.getBrowserLoggerScript = nativeBinding.getBrowserLoggerScript
