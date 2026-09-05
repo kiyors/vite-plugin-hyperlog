@@ -52,6 +52,8 @@
     "lint:oxlint": "oxlint .",
     "lint:rs": "cargo clippy",
     "test": "vitest run",
+    "test:unit": "vitest run test/unit.test.ts",
+    "test:e2e": "vitest run test/e2e.test.ts",
     "test:watch": "vitest",
     "preversion": "napi build --platform && tsdown && git add .",
     "version": "napi build --platform && tsdown && git add index.js dist/",

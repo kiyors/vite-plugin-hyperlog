@@ -12,8 +12,15 @@ const frameworks = ["react", "vue", "svelte", "solid"];
 
 let browser: Browser;
 
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
+}
+
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await chromium.launch({
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
 });
 
 afterAll(async () => {
@@ -24,11 +31,10 @@ for (const fw of frameworks) {
   test(`E2E: ${fw} logger works`, async () => {
     let devServer: ChildProcess;
     let output = "";
+    const port = Math.floor(Math.random() * 10000) + 10000;
 
     await new Promise<void>((resolve, reject) => {
       const cwd = path.resolve(__dirname, `../playground/${fw}-app`);
-
-      const port = Math.floor(Math.random() * 10000) + 10000;
 
       devServer = spawn("npx", ["vite", "--port", port.toString(), "--strictPort", "--clearScreen", "false"], {
         cwd,
@@ -36,9 +42,13 @@ for (const fw of frameworks) {
       });
 
       devServer.stdout?.on("data", (data) => {
-        const str = data.toString();
-        output += str;
-        if (str.includes("Local:") || str.includes("localhost:")) {
+        output += data.toString();
+        const clean = stripAnsi(output);
+        if (
+          clean.includes("Local:") ||
+          clean.includes(`http://localhost:${port}`) ||
+          clean.includes(`http://127.0.0.1:${port}`)
+        ) {
           resolve();
         }
       });
@@ -48,12 +58,17 @@ for (const fw of frameworks) {
       });
 
       devServer.on("error", (err) => reject(err));
+      devServer.on("exit", (code) => {
+        if (code !== null && code !== 0) {
+          reject(new Error(`Dev server exited with code ${code}. Output: ${stripAnsi(output)}`));
+        }
+      });
     });
 
     try {
-      const urlMatch = output.match(/http:\/\/localhost:\d+/);
-      if (!urlMatch) throw new Error("Could not find dev server URL. Output: " + output);
-      const url = urlMatch[0];
+      const clean = stripAnsi(output);
+      const urlMatch = clean.match(/http:\/\/(?:localhost|127\.0\.0\.1):\d+/);
+      const url = urlMatch ? urlMatch[0] : `http://localhost:${port}`;
 
       const page = await browser.newPage();
 
@@ -75,8 +90,8 @@ for (const fw of frameworks) {
 
       await page.waitForTimeout(1000);
 
-      expect(output).toContain("hello from playwright browser");
-      expect(output).toContain("test-e2e-request");
+      expect(stripAnsi(output)).toContain("hello from playwright browser");
+      expect(stripAnsi(output)).toContain("test-e2e-request");
 
       await page.close();
     } finally {
@@ -92,10 +107,10 @@ for (const fw of frameworks) {
 test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", async () => {
   let devServer: ChildProcess;
   let output = "";
+  const port = Math.floor(Math.random() * 10000) + 10000;
 
   await new Promise<void>((resolve, reject) => {
     const cwd = path.resolve(__dirname, "../playground/tanstack-start");
-    const port = Math.floor(Math.random() * 10000) + 10000;
 
     devServer = spawn(
       "npx",
@@ -108,9 +123,13 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
     );
 
     devServer.stdout?.on("data", (data) => {
-      const str = data.toString();
-      output += str;
-      if (str.includes("Local:") || str.includes("localhost:")) {
+      output += data.toString();
+      const clean = stripAnsi(output);
+      if (
+        clean.includes("Local:") ||
+        clean.includes(`http://localhost:${port}`) ||
+        clean.includes(`http://127.0.0.1:${port}`)
+      ) {
         resolve();
       }
     });
@@ -120,12 +139,17 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
     });
 
     devServer.on("error", (err) => reject(err));
+    devServer.on("exit", (code) => {
+      if (code !== null && code !== 0) {
+        reject(new Error(`Dev server exited with code ${code}. Output: ${stripAnsi(output)}`));
+      }
+    });
   });
 
   try {
-    const urlMatch = output.match(/http:\/\/localhost:\d+/);
-    if (!urlMatch) throw new Error("Could not find dev server URL. Output: " + output);
-    const url = urlMatch[0];
+    const clean = stripAnsi(output);
+    const urlMatch = clean.match(/http:\/\/(?:localhost|127\.0\.0\.1):\d+/);
+    const url = urlMatch ? urlMatch[0] : `http://localhost:${port}`;
 
     const page = await browser.newPage();
     output = "";
@@ -142,9 +166,9 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
       { timeout: 5000 },
     );
     await page.waitForTimeout(500);
-    expect(output).toContain("[server-fn]");
-    expect(output).toContain("getAuthSession");
-    expect(output).toContain("routes/__root.tsx");
+    expect(stripAnsi(output)).toContain("[server-fn]");
+    expect(stripAnsi(output)).toContain("getAuthSession");
+    expect(stripAnsi(output)).toContain("routes/__root.tsx");
 
     // 2. Test Parameterized Route matching via routeTree.gen.ts
     await page.click("#btn-route-request");
@@ -153,29 +177,29 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
       { timeout: 5000 },
     );
     await page.waitForTimeout(500);
-    expect(output).toContain("[route]");
-    expect(output).toContain("/speakers/cedric-grolet");
-    expect(output).toContain("[/speakers/$slug]");
+    expect(stripAnsi(output)).toContain("[route]");
+    expect(stripAnsi(output)).toContain("/speakers/cedric-grolet");
+    expect(stripAnsi(output)).toContain("[/speakers/$slug]");
 
     // 3. Test Batched Server Functions (debounced with repeat count)
     await page.click("#btn-batch-server-fn");
     await page.waitForTimeout(800);
-    expect(output).toContain("(x3)");
+    expect(stripAnsi(output)).toContain("(x3)");
 
     // 4. Test Rich Browser Logging & Timers
     await page.click("#btn-rich-log");
     await page.waitForTimeout(600);
-    expect(output).toContain("alex");
-    expect(output).toContain("Haute Pâtisserie");
+    expect(stripAnsi(output)).toContain("alex");
+    expect(stripAnsi(output)).toContain("Haute Pâtisserie");
 
     await page.click("#btn-timer-log");
     await page.waitForTimeout(600);
-    expect(output).toContain("tanstack-operation");
+    expect(stripAnsi(output)).toContain("tanstack-operation");
 
     // 5. Test Client-side SPA navigation
     await page.click("#link-spa-speaker");
     await page.waitForTimeout(800);
-    expect(output).toContain("/speakers/cedric-grolet");
+    expect(stripAnsi(output)).toContain("/speakers/cedric-grolet");
 
     await page.close();
   } finally {

@@ -21,12 +21,16 @@ jobs:
         with:
           runtime: node@22
           cache: true
-      - name: Install
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: lint
       - name: Oxlint
-        run: pnpm lint
+        run: pnpm run lint:oxlint
       - name: Oxfmt
         run: pnpm run fmt:oxfmt --check
       - name: Cargo fmt
@@ -64,16 +68,9 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.settings.target }}
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ~/.napi-rs
-            .cargo-cache
-            target/
-          key: ${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}
+          prefix-key: ${{ matrix.settings.target }}
       - name: Build
         run: ${{ matrix.settings.build }}
         shell: bash
@@ -108,9 +105,13 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v4
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          architecture: ${{ matrix.settings.architecture }}
       - uses: pnpm/setup@v1
         with:
-          runtime: node@${{ matrix.node }}
           cache: true
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -120,12 +121,8 @@ jobs:
       - name: List packages
         run: ls -R .
         shell: bash
-      - name: Build TypeScript
-        run: pnpm build:ts
-      - name: Install Playwright Browsers
-        run: npx playwright install chromium --with-deps
       - name: Test bindings
-        run: pnpm test
+        run: pnpm test:unit
   test-linux-binding:
     name: Test x86_64-unknown-linux-gnu - node@${{ matrix.node }}
     needs:
@@ -139,9 +136,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          architecture: x64
       - uses: pnpm/setup@v1
         with:
-          runtime: node@${{ matrix.node }}
           cache: true
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -151,12 +152,40 @@ jobs:
       - name: List packages
         run: ls -R .
         shell: bash
+      - name: Test bindings
+        run: pnpm test:unit
+  e2e:
+    name: E2E Tests
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/setup@v1
+        with:
+          runtime: node@22
+          cache: true
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-x86_64-unknown-linux-gnu
+          path: .
       - name: Build TypeScript
         run: pnpm build:ts
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Playwright Browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium --with-deps
-      - name: Test bindings
-        run: pnpm test
+      - name: Install Playwright System Dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Run E2E tests
+        run: pnpm test:e2e
   publish:
     name: Publish
     runs-on: ubuntu-latest
@@ -167,6 +196,7 @@ jobs:
       - lint
       - test-macOS-windows-binding
       - test-linux-binding
+      - e2e
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/setup@v1
