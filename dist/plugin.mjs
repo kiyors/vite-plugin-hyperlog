@@ -568,10 +568,19 @@ const DEFAULT_EXCLUDE_URLS = [
 	"?import",
 	"vite_ping",
 	"@fs",
-	"/@vite/client"
+	"/@vite",
+	"/@react-refresh",
+	"node_modules",
+	"/.well-known",
+	"/__hyperlog"
 ];
 function requestLogger(config) {
-	const exclusions = [...DEFAULT_EXCLUDE_URLS, ...config?.excludeUrls || []];
+	const excludeModules = config?.excludeModules ?? true;
+	const exclusions = [
+		...DEFAULT_EXCLUDE_URLS,
+		...config?.excludeUrls || [],
+		...config?.excludeApis ? ["/api"] : []
+	];
 	const excludedMethods = config?.excludeReqType ? new Set(config.excludeReqType.map((type) => type.toUpperCase())) : null;
 	const resolveRoute = config?.resolveRoute;
 	return {
@@ -579,10 +588,29 @@ function requestLogger(config) {
 		apply: "serve",
 		configureServer(server) {
 			server.middlewares.use((req, res, next) => {
+				if (req.url === "/__hyperlog/route" && req.method === "POST") {
+					let body = "";
+					req.on("data", (chunk) => {
+						body += chunk;
+					});
+					req.on("end", () => {
+						try {
+							const data = JSON.parse(body);
+							const logString = (0, import_vite_plugin_logger.formatRouteLog)(data.routeId || data.path, data.path, data.params ?? null, data.durationMs ? Number(data.durationMs) : null, Boolean(data.isPreload));
+							if (logString) console.log(logString);
+						} catch {}
+						res.statusCode = 204;
+						res.end();
+					});
+					return;
+				}
 				const url = req.originalUrl || "";
 				const method = req.method || "GET";
 				if (excludedMethods && excludedMethods.has(method.toUpperCase())) return next();
 				for (let i = 0; i < exclusions.length; i++) if (url.includes(exclusions[i])) return next();
+				if (excludeModules) {
+					if (url.includes("node_modules") || url.startsWith("/@") || url.includes("/@")) return next();
+				}
 				const start = performance.now();
 				let logged = false;
 				const logIt = () => {
@@ -681,6 +709,24 @@ function browserLogger() {
 			};
 			server.ws.on("vite-plugin-hyperlog:browser-log", handleBrowserLog);
 			server.ws.on("vite-plugin-hyperlog:tanstack-route", handleTanStackRoute);
+			server.middlewares.use((req, res, next) => {
+				if (req.url === "/__hyperlog/route" && req.method === "POST") {
+					let body = "";
+					req.on("data", (chunk) => {
+						body += chunk;
+					});
+					req.on("end", () => {
+						try {
+							const data = JSON.parse(body);
+							handleTanStackRoute(data);
+						} catch {}
+						res.statusCode = 204;
+						res.end();
+					});
+					return;
+				}
+				next();
+			});
 		}
 	};
 }

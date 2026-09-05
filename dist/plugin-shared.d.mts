@@ -14,6 +14,16 @@ type ReqType = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD" 
 interface RequestLoggerConfig {
   excludeReqType?: ReqType[];
   excludeUrls?: string[];
+  /**
+   * Filter out internal Vite module and dependency compilation noise (/node_modules/, /@vite, etc.)
+   * @default true
+   */
+  excludeModules?: boolean;
+  /**
+   * Filter out /api endpoint requests from terminal logs
+   * @default false
+   */
+  excludeApis?: boolean;
   resolveRoute?: (url: string) => string | undefined | null;
 }
 declare function requestLogger(config?: RequestLoggerConfig): Plugin;

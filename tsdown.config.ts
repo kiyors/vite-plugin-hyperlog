@@ -14,6 +14,9 @@ export default defineConfig({
   dts: true,
   exports: false,
   clean: true,
+  outputOptions: {
+    chunkFileNames: "[name]-shared.mjs",
+  },
   outDir: "dist",
   platform: "node",
   deps: {

@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 fn is_valid_route(s: &str) -> bool {
   let trimmed = s.trim();
   trimmed.starts_with('/')
+    && !trimmed.starts_with("/@")
     && !trimmed.starts_with("/api")
     && !trimmed.contains("node_modules")
     && !trimmed.contains('?')

@@ -1,4 +1,4 @@
-import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-Dwg8wueH.mjs";
+import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-shared.mjs";
 //#region src/vue.d.ts
 declare const requestLogger: (config?: RequestLoggerConfig) => Plugin, logger: (config?: RequestLoggerConfig) => Plugin[];
 //#endregion

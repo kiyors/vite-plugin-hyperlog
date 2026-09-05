@@ -31,13 +31,37 @@ export type ReqType =
 export interface RequestLoggerConfig {
   excludeReqType?: ReqType[];
   excludeUrls?: string[];
+  /**
+   * Filter out internal Vite module and dependency compilation noise (/node_modules/, /@vite, etc.)
+   * @default true
+   */
+  excludeModules?: boolean;
+  /**
+   * Filter out /api endpoint requests from terminal logs
+   * @default false
+   */
+  excludeApis?: boolean;
   resolveRoute?: (url: string) => string | undefined | null;
 }
 
-const DEFAULT_EXCLUDE_URLS = ["?import", "vite_ping", "@fs", "/@vite/client"];
+const DEFAULT_EXCLUDE_URLS = [
+  "?import",
+  "vite_ping",
+  "@fs",
+  "/@vite",
+  "/@react-refresh",
+  "node_modules",
+  "/.well-known",
+  "/__hyperlog",
+];
 
 export function requestLogger(config?: RequestLoggerConfig): Plugin {
-  const exclusions = [...DEFAULT_EXCLUDE_URLS, ...(config?.excludeUrls || [])];
+  const excludeModules = config?.excludeModules ?? true;
+  const exclusions = [
+    ...DEFAULT_EXCLUDE_URLS,
+    ...(config?.excludeUrls || []),
+    ...(config?.excludeApis ? ["/api"] : []),
+  ];
   const excludedMethods = config?.excludeReqType
     ? new Set(config.excludeReqType.map((type) => type.toUpperCase()))
     : null;
@@ -48,6 +72,31 @@ export function requestLogger(config?: RequestLoggerConfig): Plugin {
     apply: "serve",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        if (req.url === "/__hyperlog/route" && req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk) => {
+            body += chunk;
+          });
+          req.on("end", () => {
+            try {
+              const data = JSON.parse(body);
+              const logString = formatRouteLog(
+                data.routeId || data.path,
+                data.path,
+                data.params ?? null,
+                data.durationMs ? Number(data.durationMs) : null,
+                Boolean(data.isPreload),
+              );
+              if (logString) {
+                console.log(logString);
+              }
+            } catch {}
+            res.statusCode = 204;
+            res.end();
+          });
+          return;
+        }
+
         const url = req.originalUrl || "";
         const method = req.method || "GET";
 
@@ -57,6 +106,12 @@ export function requestLogger(config?: RequestLoggerConfig): Plugin {
 
         for (let i = 0; i < exclusions.length; i++) {
           if (url.includes(exclusions[i])) {
+            return next();
+          }
+        }
+
+        if (excludeModules) {
+          if (url.includes("node_modules") || url.startsWith("/@") || url.includes("/@")) {
             return next();
           }
         }
@@ -232,6 +287,25 @@ export function browserLogger(): Plugin {
 
       server.ws.on("vite-plugin-hyperlog:browser-log", handleBrowserLog);
       server.ws.on("vite-plugin-hyperlog:tanstack-route", handleTanStackRoute);
+
+      server.middlewares.use((req, res, next) => {
+        if (req.url === "/__hyperlog/route" && req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk) => {
+            body += chunk;
+          });
+          req.on("end", () => {
+            try {
+              const data = JSON.parse(body);
+              handleTanStackRoute(data);
+            } catch {}
+            res.statusCode = 204;
+            res.end();
+          });
+          return;
+        }
+        next();
+      });
     },
   };
 }

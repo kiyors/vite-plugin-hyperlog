@@ -1,13 +1,17 @@
-import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-Dwg8wueH.mjs";
-import { TanStackLocation, TanStackResolvedState, TanStackRouteMatch, TanStackRouterLike, registerTanStackRouterLogger } from "./tanstack-client.mjs";
+import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-shared.mjs";
 import { Plugin } from "vite";
 //#region src/tanstack.d.ts
 interface TanStackLoggerConfig extends RequestLoggerConfig {
   /**
-   * Filter out internal Vite module compilation noise (/src/***.tsx, ?tsr-split, etc.)
+   * Filter out internal Vite module compilation noise (/src/***.tsx, /node_modules/, ?tsr-split, etc.)
    * @default true
    */
   excludeModules?: boolean;
+  /**
+   * Filter out /api endpoint requests from terminal logs
+   * @default false
+   */
+  excludeApis?: boolean;
   /**
    * Automatically match URLs to route patterns defined in routeTree.gen.ts
    * @default true
@@ -40,4 +44,4 @@ declare function requestLogger(config?: TanStackLoggerConfig): Plugin;
  */
 declare function tanstackLogger(config?: TanStackLoggerConfig): Plugin[];
 //#endregion
-export { RouteMatcher, TanStackLocation, TanStackLoggerConfig, TanStackResolvedState, TanStackRouteMatch, TanStackRouterLike, browserLogger, tanstackLogger as default, tanstackLogger, parseRouteTreeContent, registerTanStackRouterLogger, requestLogger };
+export { RouteMatcher, TanStackLoggerConfig, browserLogger, tanstackLogger as default, tanstackLogger, parseRouteTreeContent, requestLogger };

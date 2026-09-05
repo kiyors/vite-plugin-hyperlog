@@ -1,5 +1,4 @@
 import { browserLogger, t as require_vite_plugin_logger } from "./plugin.mjs";
-import { registerTanStackRouterLogger } from "./tanstack-client.mjs";
 import fs from "node:fs";
 import path from "node:path";
 //#region src/tanstack.ts
@@ -11,11 +10,21 @@ function parseRouteTreeContent(content) {
 		for (const r of astRoutes) routes.add(r);
 	} catch {}
 	if (routes.size === 0) {
-		const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
-		for (const match of matches) {
+		const fullPathMatches = Array.from(content.matchAll(/fullPath:\s*['"](\/[^'"]*)['"]/g));
+		if (fullPathMatches.length > 0) for (const match of fullPathMatches) {
 			const p = match[1].trim();
-			if (p && !p.startsWith("/api") && !p.includes("node_modules")) routes.add(p);
+			if (p && !p.startsWith("/@") && !p.startsWith("/api") && !p.includes("node_modules")) routes.add(p);
 		}
+		else {
+			const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
+			for (const match of matches) {
+				const p = match[1].trim();
+				if (p && !p.startsWith("/@") && !p.startsWith("/api") && !p.includes("node_modules")) routes.add(p);
+			}
+		}
+	}
+	for (const route of Array.from(routes)) if (route.startsWith("/$") && route.split("/").filter(Boolean).length === 1) {
+		if (Array.from(routes).some((other) => other !== route && other.endsWith(route))) routes.delete(route);
 	}
 	const matchers = [];
 	for (const route of routes) {
@@ -46,18 +55,24 @@ const DEFAULT_EXCLUDE_URLS = [
 	"?import",
 	"vite_ping",
 	"@fs",
-	"/@vite/client"
+	"/@vite",
+	"/@react-refresh",
+	"node_modules",
+	"/.well-known",
+	"/__hyperlog"
 ];
 const TANSTACK_EXCLUDE_PATTERNS = [
 	"?tsr-split",
 	"virtual:tanstack-start",
-	"/@id/virtual:"
+	"/@id/virtual:",
+	"/@id/",
+	"/@fs/"
 ];
 const SOURCE_MODULE_RE = /\.(?:tsx|ts|jsx|js|css)$/;
 function isSourceModule(url) {
 	if (url.startsWith("/api") || url.startsWith("/_serverFn")) return false;
 	const cleanPath = url.split("?")[0];
-	return cleanPath.startsWith("/src/") && SOURCE_MODULE_RE.test(cleanPath);
+	return cleanPath.startsWith("/src/") || cleanPath.startsWith("/node_modules/") || cleanPath.includes("node_modules") || cleanPath.startsWith("/@") || SOURCE_MODULE_RE.test(cleanPath);
 }
 function requestLogger(config) {
 	const excludeModules = config?.excludeModules ?? true;
@@ -68,7 +83,11 @@ function requestLogger(config) {
 	const routeCache = /* @__PURE__ */ new Map();
 	const pendingServerFns = /* @__PURE__ */ new Map();
 	const MAX_PENDING_SERVER_FNS = 250;
-	const exclusions = [...DEFAULT_EXCLUDE_URLS, ...config?.excludeUrls || []];
+	const exclusions = [
+		...DEFAULT_EXCLUDE_URLS,
+		...config?.excludeUrls || [],
+		...config?.excludeApis ? ["/api"] : []
+	];
 	const excludedMethods = config?.excludeReqType ? new Set(config.excludeReqType.map((type) => type.toUpperCase())) : null;
 	const flushServerFn = (key) => {
 		const entry = pendingServerFns.get(key);
@@ -85,6 +104,7 @@ function requestLogger(config) {
 		}
 		if (!matchRouteTree || routeMatchers.length === 0) return null;
 		const cleanPath = url.split("?")[0];
+		if (cleanPath.startsWith("/@") || cleanPath.startsWith("/node_modules") || cleanPath.includes("node_modules") || cleanPath.startsWith("/api") || cleanPath.startsWith("/_serverFn")) return null;
 		const cached = routeCache.get(cleanPath);
 		if (cached !== void 0) return cached;
 		for (let i = 0; i < routeMatchers.length; i++) if (routeMatchers[i].regex.test(cleanPath)) {
@@ -121,7 +141,28 @@ function requestLogger(config) {
 					flushServerFn(key);
 				}
 			});
+			const handleTanStackRoute = (data) => {
+				const { routeId, path, params, durationMs, isPreload } = data;
+				const logString = (0, import_vite_plugin_logger.formatRouteLog)(routeId || path, path, params ?? null, durationMs ? Number(durationMs) : null, Boolean(isPreload));
+				if (logString) console.log(logString);
+			};
+			server.ws.on("vite-plugin-hyperlog:tanstack-route", handleTanStackRoute);
 			server.middlewares.use((req, res, next) => {
+				if (req.url === "/__hyperlog/route" && req.method === "POST") {
+					let body = "";
+					req.on("data", (chunk) => {
+						body += chunk;
+					});
+					req.on("end", () => {
+						try {
+							const data = JSON.parse(body);
+							handleTanStackRoute(data);
+						} catch {}
+						res.statusCode = 204;
+						res.end();
+					});
+					return;
+				}
 				const url = req.originalUrl || "";
 				const method = req.method || "GET";
 				if (excludedMethods && excludedMethods.has(method.toUpperCase())) return next();
@@ -194,4 +235,4 @@ function tanstackLogger(config) {
 	return [requestLogger(config), browserLogger()];
 }
 //#endregion
-export { browserLogger, tanstackLogger as default, tanstackLogger, parseRouteTreeContent, registerTanStackRouterLogger, requestLogger };
+export { browserLogger, tanstackLogger as default, tanstackLogger, parseRouteTreeContent, requestLogger };

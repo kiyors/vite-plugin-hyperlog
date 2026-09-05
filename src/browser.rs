@@ -222,6 +222,7 @@ pub fn format_browser_log(
 pub fn get_browser_logger_script() -> String {
   r#"
 if (typeof window !== 'undefined' && import.meta.hot) {
+  window.__HYPERLOG_HOT__ = import.meta.hot;
   const originalLog = console.log;
   const originalError = console.error;
   const originalWarn = console.warn;

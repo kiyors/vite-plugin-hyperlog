@@ -54,10 +54,9 @@ fn is_asset_path(path: &str) -> bool {
 
 #[inline]
 fn is_module_path(path: &str) -> bool {
-  path.starts_with("/@id/")
-    || path.starts_with("/@fs/")
-    || path.starts_with("/@vite/")
+  path.starts_with("/@")
     || path.starts_with("/node_modules/")
+    || path.contains("node_modules")
     || if let Some((_, ext)) = path.rsplit_once('.') {
       matches!(
         ext,
@@ -216,6 +215,11 @@ mod tests {
     assert_eq!(classify_path("/favicon.ico"), RequestCategory::Asset);
     assert_eq!(classify_path("/src/main.tsx"), RequestCategory::Module);
     assert_eq!(classify_path("/@id/virtual:entry"), RequestCategory::Module);
+    assert_eq!(classify_path("/@react-refresh"), RequestCategory::Module);
+    assert_eq!(
+      classify_path("/node_modules/.vite/deps/react.js"),
+      RequestCategory::Module
+    );
     assert_eq!(classify_path("/dashboard"), RequestCategory::Route);
     assert_eq!(classify_path("/"), RequestCategory::Route);
   }

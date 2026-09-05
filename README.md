@@ -58,7 +58,7 @@ For TanStack applications, import from `vite-plugin-hyperlog/tanstack`. It inclu
 - **Server Function Decoding**: Automatically decodes `/_serverFn` base64 endpoints to display human-readable function names and source files (e.g. `[server-fn] 200 GET getAuthSession (routes/__root.tsx) 18.82ms`), flagging errors with `❌`.
 - **Duplicate Batching**: Groups and debounces consecutive duplicate server function calls (e.g. `(x5)`) during component mounts and revalidations.
 - **Route Pattern Matching**: Powered by an ultra-fast, native Rust AST parser to extract route patterns and types from `src/routeTree.gen.ts` with 0 regex fragility, displaying parameterized route patterns (e.g. `/$teamId/channels/$channelId`) alongside the requested URL.
-- **Module Noise Filtering**: Automatically filters out internal Vite `.tsx`/`.ts` module compilation noise and code-split queries (`?tsr-split=component`).
+- **Module Noise Filtering**: Automatically filters out internal Vite module compilation noise (`/node_modules/`, `/@vite`, `.tsx`/`.ts` compilation requests, and `?tsr-split=component`).
 
 ```typescript
 // vite.config.ts
@@ -68,8 +68,10 @@ import { requestLogger, browserLogger } from "vite-plugin-hyperlog/tanstack";
 export default defineConfig({
   plugins: [
     requestLogger({
-      // Exclude internal module compilation noise (default: true)
+      // Exclude internal module and node_modules compilation noise (default: true)
       excludeModules: true,
+      // Exclude /api requests if you only want to focus on routes and server functions (default: false)
+      excludeApis: false,
       // Automatically match URLs to route patterns in routeTree.gen.ts (default: true)
       matchRouteTree: true,
       // Group and debounce repeated server functions (default: true)
@@ -84,10 +86,12 @@ export default defineConfig({
 
 Because client-side SPA navigations occur inside the browser without triggering full-page HTTP requests, you can register the client-side route subscriber to stream route transitions and preloads straight to your dev terminal:
 
+> **Important**: Always import `registerTanStackRouterLogger` from `"vite-plugin-hyperlog/tanstack/client"` (not `"vite-plugin-hyperlog/tanstack"`). The `tanstack` entry point is the Vite server plugin which runs in Node.js, while `tanstack/client` is the zero-dependency browser client bundle.
+
 ```typescript
 // src/router.tsx (or your client router entry)
 import { createRouter } from "@tanstack/react-router";
-import { registerTanStackRouterLogger } from "vite-plugin-hyperlog/tanstack";
+import { registerTanStackRouterLogger } from "vite-plugin-hyperlog/tanstack/client";
 import { routeTree } from "./routeTree.gen";
 
 export const router = createRouter({ routeTree });

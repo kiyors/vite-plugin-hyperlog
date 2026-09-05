@@ -3,15 +3,21 @@ import path from "node:path";
 
 import type { Plugin } from "vite";
 
-import { formatLogEntry, parseRouteTreeAst } from "../index.js";
+import { formatLogEntry, formatRouteLog, parseRouteTreeAst } from "../index.js";
 import { browserLogger, type RequestLoggerConfig } from "./plugin";
 
 export interface TanStackLoggerConfig extends RequestLoggerConfig {
   /**
-   * Filter out internal Vite module compilation noise (/src/***.tsx, ?tsr-split, etc.)
+   * Filter out internal Vite module compilation noise (/src/***.tsx, /node_modules/, ?tsr-split, etc.)
    * @default true
    */
   excludeModules?: boolean;
+
+  /**
+   * Filter out /api endpoint requests from terminal logs
+   * @default false
+   */
+  excludeApis?: boolean;
 
   /**
    * Automatically match URLs to route patterns defined in routeTree.gen.ts
@@ -57,11 +63,31 @@ export function parseRouteTreeContent(content: string): RouteMatcher[] {
 
   // Fallback to regex if AST was empty or unsupported
   if (routes.size === 0) {
-    const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
-    for (const match of matches) {
-      const p = match[1].trim();
-      if (p && !p.startsWith("/api") && !p.includes("node_modules")) {
-        routes.add(p);
+    const fullPathMatches = Array.from(content.matchAll(/fullPath:\s*['"](\/[^'"]*)['"]/g));
+    if (fullPathMatches.length > 0) {
+      for (const match of fullPathMatches) {
+        const p = match[1].trim();
+        if (p && !p.startsWith("/@") && !p.startsWith("/api") && !p.includes("node_modules")) {
+          routes.add(p);
+        }
+      }
+    } else {
+      const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
+      for (const match of matches) {
+        const p = match[1].trim();
+        if (p && !p.startsWith("/@") && !p.startsWith("/api") && !p.includes("node_modules")) {
+          routes.add(p);
+        }
+      }
+    }
+  }
+
+  // Remove partial child wildcard fragments (e.g. "/$channelId") if a full path (e.g. "/$teamId/channels/$channelId") exists
+  for (const route of Array.from(routes)) {
+    if (route.startsWith("/$") && route.split("/").filter(Boolean).length === 1) {
+      const isChildFragment = Array.from(routes).some((other) => other !== route && other.endsWith(route));
+      if (isChildFragment) {
+        routes.delete(route);
       }
     }
   }
@@ -105,8 +131,17 @@ export function parseRouteTreeContent(content: string): RouteMatcher[] {
   return matchers;
 }
 
-const DEFAULT_EXCLUDE_URLS = ["?import", "vite_ping", "@fs", "/@vite/client"];
-const TANSTACK_EXCLUDE_PATTERNS = ["?tsr-split", "virtual:tanstack-start", "/@id/virtual:"];
+const DEFAULT_EXCLUDE_URLS = [
+  "?import",
+  "vite_ping",
+  "@fs",
+  "/@vite",
+  "/@react-refresh",
+  "node_modules",
+  "/.well-known",
+  "/__hyperlog",
+];
+const TANSTACK_EXCLUDE_PATTERNS = ["?tsr-split", "virtual:tanstack-start", "/@id/virtual:", "/@id/", "/@fs/"];
 const SOURCE_MODULE_RE = /\.(?:tsx|ts|jsx|js|css)$/;
 
 function isSourceModule(url: string): boolean {
@@ -114,7 +149,13 @@ function isSourceModule(url: string): boolean {
     return false;
   }
   const cleanPath = url.split("?")[0];
-  return cleanPath.startsWith("/src/") && SOURCE_MODULE_RE.test(cleanPath);
+  return (
+    cleanPath.startsWith("/src/") ||
+    cleanPath.startsWith("/node_modules/") ||
+    cleanPath.includes("node_modules") ||
+    cleanPath.startsWith("/@") ||
+    SOURCE_MODULE_RE.test(cleanPath)
+  );
 }
 
 interface PendingServerFn {
@@ -140,7 +181,11 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
   const pendingServerFns = new Map<string, PendingServerFn>();
   const MAX_PENDING_SERVER_FNS = 250;
 
-  const exclusions = [...DEFAULT_EXCLUDE_URLS, ...(config?.excludeUrls || [])];
+  const exclusions = [
+    ...DEFAULT_EXCLUDE_URLS,
+    ...(config?.excludeUrls || []),
+    ...(config?.excludeApis ? ["/api"] : []),
+  ];
   const excludedMethods = config?.excludeReqType
     ? new Set(config.excludeReqType.map((type) => type.toUpperCase()))
     : null;
@@ -177,6 +222,16 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
     }
 
     const cleanPath = url.split("?")[0];
+    if (
+      cleanPath.startsWith("/@") ||
+      cleanPath.startsWith("/node_modules") ||
+      cleanPath.includes("node_modules") ||
+      cleanPath.startsWith("/api") ||
+      cleanPath.startsWith("/_serverFn")
+    ) {
+      return null;
+    }
+
     const cached = routeCache.get(cleanPath);
     if (cached !== undefined) {
       return cached;
@@ -233,7 +288,45 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
         }
       });
 
+      const handleTanStackRoute = (data: {
+        routeId?: string;
+        path: string;
+        params?: string | null;
+        durationMs?: number | null;
+        isPreload?: boolean | null;
+      }) => {
+        const { routeId, path, params, durationMs, isPreload } = data;
+        const logString = formatRouteLog(
+          routeId || path,
+          path,
+          params ?? null,
+          durationMs ? Number(durationMs) : null,
+          Boolean(isPreload),
+        );
+        if (logString) {
+          console.log(logString);
+        }
+      };
+
+      server.ws.on("vite-plugin-hyperlog:tanstack-route", handleTanStackRoute);
+
       server.middlewares.use((req, res, next) => {
+        if (req.url === "/__hyperlog/route" && req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk) => {
+            body += chunk;
+          });
+          req.on("end", () => {
+            try {
+              const data = JSON.parse(body);
+              handleTanStackRoute(data);
+            } catch {}
+            res.statusCode = 204;
+            res.end();
+          });
+          return;
+        }
+
         const url = req.originalUrl || "";
         const method = req.method || "GET";
 
@@ -352,6 +445,5 @@ export function tanstackLogger(config?: TanStackLoggerConfig): Plugin[] {
   return [requestLogger(config), browserLogger()];
 }
 
-export * from "./tanstack-client";
 export { browserLogger };
 export default tanstackLogger;
