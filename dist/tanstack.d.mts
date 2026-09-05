@@ -1,4 +1,4 @@
-import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-AMSmCQRy.mjs";
+import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-Dwg8wueH.mjs";
 import { TanStackLocation, TanStackResolvedState, TanStackRouteMatch, TanStackRouterLike, registerTanStackRouterLogger } from "./tanstack-client.mjs";
 import { Plugin } from "vite";
 //#region src/tanstack.d.ts

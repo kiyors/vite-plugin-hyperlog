@@ -72,9 +72,6 @@ importers:
         specifier: ^19.2.8
         version: 19.2.8(react@19.2.8)
     devDependencies:
-      '@kiyors/vite-plugin-logger':
-        specifier: workspace:*
-        version: link:../..
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
@@ -96,6 +93,9 @@ importers:
       vite:
         specifier: ^8.2.0
         version: 8.2.1(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite-plugin-hyperlog:
+        specifier: workspace:*
+        version: link:../..
 
   playground/solid-app:
     dependencies:
@@ -103,9 +103,6 @@ importers:
         specifier: ^1.9.14
         version: 1.9.14
     devDependencies:
-      '@kiyors/vite-plugin-logger':
-        specifier: workspace:*
-        version: link:../..
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
@@ -115,15 +112,15 @@ importers:
       vite:
         specifier: ^8.2.0
         version: 8.2.1(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite-plugin-hyperlog:
+        specifier: workspace:*
+        version: link:../..
       vite-plugin-solid:
         specifier: ^2.11.13
         version: 2.11.14(solid-js@1.9.14)(vite@8.2.1(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
 
   playground/svelte-app:
     devDependencies:
-      '@kiyors/vite-plugin-logger':
-        specifier: workspace:*
-        version: link:../..
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.2.0
         version: 7.3.0(svelte@5.56.9)(vite@8.2.1(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
@@ -145,6 +142,9 @@ importers:
       vite:
         specifier: ^8.2.0
         version: 8.2.1(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite-plugin-hyperlog:
+        specifier: workspace:*
+        version: link:../..
 
   playground/tanstack-start:
     dependencies:
@@ -269,9 +269,6 @@ importers:
       '@content-collections/vite':
         specifier: ^0.3.0
         version: 0.3.0(@content-collections/core@0.13.1(typescript@6.0.3))(vite@8.2.1(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
-      '@kiyors/vite-plugin-logger':
-        specifier: workspace:*
-        version: link:../..
       '@rolldown/plugin-babel':
         specifier: ^0.2.3
         version: 0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(rolldown@1.2.4)(vite@8.2.1(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
@@ -308,6 +305,9 @@ importers:
       vite:
         specifier: ^8.0.0
         version: 8.2.1(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0)
+      vite-plugin-hyperlog:
+        specifier: workspace:*
+        version: link:../..
 
   playground/vue-app:
     dependencies:
@@ -315,9 +315,6 @@ importers:
         specifier: ^3.5.40
         version: 3.5.41(typescript@6.0.3)
     devDependencies:
-      '@kiyors/vite-plugin-logger':
-        specifier: workspace:*
-        version: link:../..
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
@@ -333,6 +330,9 @@ importers:
       vite:
         specifier: ^8.2.0
         version: 8.2.1(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite-plugin-hyperlog:
+        specifier: workspace:*
+        version: link:../..
       vue-tsc:
         specifier: ^3.3.8
         version: 3.3.10(typescript@6.0.3)

@@ -1,4 +1,4 @@
-# @kiyors/vite-plugin-logger
+# vite-plugin-hyperlog
 
 A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
 
@@ -14,7 +14,7 @@ A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
 Install using your preferred package manager (PNPM is recommended):
 
 ```bash
-pnpm add -D @kiyors/vite-plugin-logger
+pnpm add -D vite-plugin-hyperlog
 ```
 
 ## Usage
@@ -24,9 +24,9 @@ Import `requestLogger` and `browserLogger` from your specific framework's entry 
 ```typescript
 // vite.config.ts
 import { defineConfig } from "vite";
-import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger/react";
-// OR from "@kiyors/vite-plugin-logger/tanstack";
-// OR from "@kiyors/vite-plugin-logger/vue";
+import { requestLogger, browserLogger } from "vite-plugin-hyperlog/react";
+// OR from "vite-plugin-hyperlog/tanstack";
+// OR from "vite-plugin-hyperlog/vue";
 
 import react from "@vitejs/plugin-react";
 
@@ -53,7 +53,7 @@ requestLogger({
 
 ### TanStack Start & TanStack Router
 
-For TanStack applications, import from `@kiyors/vite-plugin-logger/tanstack`. It includes tailored optimizations:
+For TanStack applications, import from `vite-plugin-hyperlog/tanstack`. It includes tailored optimizations:
 
 - **Server Function Decoding**: Automatically decodes `/_serverFn` base64 endpoints to display human-readable function names and source files (e.g. `[server-fn] 200 GET getAuthSession (routes/__root.tsx) 18.82ms`), flagging errors with `❌`.
 - **Duplicate Batching**: Groups and debounces consecutive duplicate server function calls (e.g. `(x5)`) during component mounts and revalidations.
@@ -63,7 +63,7 @@ For TanStack applications, import from `@kiyors/vite-plugin-logger/tanstack`. It
 ```typescript
 // vite.config.ts
 import { defineConfig } from "vite";
-import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger/tanstack";
+import { requestLogger, browserLogger } from "vite-plugin-hyperlog/tanstack";
 
 export default defineConfig({
   plugins: [
@@ -87,7 +87,7 @@ Because client-side SPA navigations occur inside the browser without triggering 
 ```typescript
 // src/router.tsx (or your client router entry)
 import { createRouter } from "@tanstack/react-router";
-import { registerTanStackRouterLogger } from "@kiyors/vite-plugin-logger/tanstack";
+import { registerTanStackRouterLogger } from "vite-plugin-hyperlog/tanstack";
 import { routeTree } from "./routeTree.gen";
 
 export const router = createRouter({ routeTree });
@@ -130,7 +130,7 @@ registerTanStackRouterLogger(router);
 
 ## Performance & Benchmarks
 
-`vite-plugin-logger` is engineered for zero runtime overhead in Vite development servers. The native extension is written in pure, dependency-minimal Rust compiled to bare metal via Node-API.
+`vite-plugin-hyperlog` is engineered for zero runtime overhead in Vite development servers. The native extension is written in pure, dependency-minimal Rust compiled to bare metal via Node-API.
 
 ### Binary Footprint
 

@@ -1,5 +1,5 @@
 /**
- * vite-plugin-logger — Enterprise Production Benchmark & Hardware Profiler
+ * vite-plugin-hyperlog — Enterprise Production Benchmark & Hardware Profiler
  *
  * Usage:
  *   node --expose-gc scripts/benchmark.mjs
@@ -312,10 +312,10 @@ kv(
 console.log("");
 subheader("Compiled Native Binaries");
 const nodeFiles = [
-  "vite-plugin-logger.darwin-arm64.node",
-  "vite-plugin-logger.darwin-x64.node",
-  "vite-plugin-logger.linux-x64-gnu.node",
-  "vite-plugin-logger.win32-x64-msvc.node",
+  "vite-plugin-hyperlog.darwin-arm64.node",
+  "vite-plugin-hyperlog.darwin-x64.node",
+  "vite-plugin-hyperlog.linux-x64-gnu.node",
+  "vite-plugin-hyperlog.win32-x64-msvc.node",
 ];
 let binaryFound = false;
 for (const f of nodeFiles) {

@@ -1,4 +1,4 @@
-import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger/svelte";
+import { requestLogger, browserLogger } from "vite-plugin-hyperlog/svelte";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vite";
 

@@ -1,22 +1,23 @@
 {
-  "name": "vite-plugin-logger-darwin-x64",
-  "version": "0.0.8",
+  "name": "vite-plugin-hyperlog-darwin-x64",
+  "version": "0.0.12",
   "description": "High-performance Vite plugin for request and browser logging, powered by Rust",
   "keywords": [
-    "N-API",
-    "NAPI",
-    "Rust",
-    "napi-rs",
-    "node-addon",
-    "node-addon-api"
+    "browser-logger",
+    "hyperlog",
+    "logger",
+    "request-logger",
+    "vite",
+    "vite-plugin",
+    "vite-plugin-hyperlog"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/kiyors/vite-plugin-logger.git"
+    "url": "git+ssh://git@github.com/kiyors/vite-plugin-hyperlog.git"
   },
   "files": [
-    "vite-plugin-logger.darwin-x64.node"
+    "vite-plugin-hyperlog.darwin-x64.node"
   ],
   "os": [
     "darwin"
@@ -24,7 +25,7 @@
   "cpu": [
     "x64"
   ],
-  "main": "vite-plugin-logger.darwin-x64.node",
+  "main": "vite-plugin-hyperlog.darwin-x64.node",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

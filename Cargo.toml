@@ -2,7 +2,7 @@
 [package]
 authors = ["kiyors <gaurav23617@gmail.com>"]
 edition = "2021"
-name = "vite_plugin_logger"
+name = "vite_plugin_hyperlog"
 version = "0.1.0"
 
 [lib]

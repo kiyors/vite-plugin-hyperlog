@@ -54,7 +54,7 @@
   "devDependencies": {
     "@content-collections/core": "^0.13.1",
     "@content-collections/vite": "^0.3.0",
-    "@kiyors/vite-plugin-logger": "workspace:*",
+    "vite-plugin-hyperlog": "workspace:*",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/typography": "^0.5.16",
     "@tanstack/devtools-event-client": "latest",

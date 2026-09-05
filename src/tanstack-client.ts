@@ -39,7 +39,7 @@ interface HotMeta {
  *
  * @example
  * ```ts
- * import { registerTanStackRouterLogger } from "@kiyors/vite-plugin-logger/tanstack/client";
+ * import { registerTanStackRouterLogger } from "vite-plugin-hyperlog/tanstack/client";
  * export const router = createRouter({ routeTree });
  * registerTanStackRouterLogger(router);
  * ```
@@ -79,7 +79,7 @@ export function registerTanStackRouterLogger(router: TanStackRouterLike): void {
         // SAFETY: Casting import.meta to structural interface containing optional hot client
         const hotMeta = import.meta as HotMeta;
         if (hotMeta.hot) {
-          hotMeta.hot.send("vite-plugin-logger:tanstack-route", {
+          hotMeta.hot.send("vite-plugin-hyperlog:tanstack-route", {
             routeId,
             path: pathname,
             params,
@@ -109,7 +109,7 @@ export function registerTanStackRouterLogger(router: TanStackRouterLike): void {
         // SAFETY: Casting import.meta to structural interface containing optional hot client
         const hotMeta = import.meta as HotMeta;
         if (hotMeta.hot) {
-          hotMeta.hot.send("vite-plugin-logger:tanstack-route", {
+          hotMeta.hot.send("vite-plugin-hyperlog:tanstack-route", {
             routeId,
             path: pathname,
             params: null,

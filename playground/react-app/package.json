@@ -14,7 +14,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@kiyors/vite-plugin-logger": "workspace:*",
+    "vite-plugin-hyperlog": "workspace:*",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

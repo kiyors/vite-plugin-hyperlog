@@ -12,7 +12,7 @@
     "vue": "^3.5.40"
   },
   "devDependencies": {
-    "@kiyors/vite-plugin-logger": "workspace:*",
+    "vite-plugin-hyperlog": "workspace:*",
     "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1",

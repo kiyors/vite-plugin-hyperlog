@@ -1,5 +1,5 @@
 import "virtual:browser-logger";
-import { registerTanStackRouterLogger } from "@kiyors/vite-plugin-logger/tanstack/client";
+import { registerTanStackRouterLogger } from "vite-plugin-hyperlog/tanstack/client";
 import { createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 

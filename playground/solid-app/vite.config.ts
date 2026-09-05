@@ -1,4 +1,4 @@
-import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger/solid";
+import { requestLogger, browserLogger } from "vite-plugin-hyperlog/solid";
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 

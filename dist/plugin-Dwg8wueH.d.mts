@@ -23,7 +23,7 @@ declare function browserLogger(): Plugin;
  *
  * @example
  * ```ts
- * import logger from "@kiyors/vite-plugin-logger";
+ * import logger from "vite-plugin-hyperlog";
  * export default defineConfig({
  *   plugins: [logger()],
  * });

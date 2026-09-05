@@ -27,7 +27,7 @@ interface TanStackRouterLike {
  *
  * @example
  * ```ts
- * import { registerTanStackRouterLogger } from "@kiyors/vite-plugin-logger/tanstack/client";
+ * import { registerTanStackRouterLogger } from "vite-plugin-hyperlog/tanstack/client";
  * export const router = createRouter({ routeTree });
  * registerTanStackRouterLogger(router);
  * ```

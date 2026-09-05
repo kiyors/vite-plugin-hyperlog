@@ -290,7 +290,7 @@ if (typeof window !== 'undefined' && import.meta.hot) {
 
       const caller = customCaller !== undefined ? customCaller : extractCaller();
 
-      import.meta.hot.send('vite-plugin-logger:browser-log', {
+      import.meta.hot.send('vite-plugin-hyperlog:browser-log', {
         type,
         message,
         caller,

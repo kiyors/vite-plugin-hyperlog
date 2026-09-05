@@ -1,3 +1,3 @@
-# `vite-plugin-logger-linux-x64-gnu`
+# `vite-plugin-hyperlog-linux-x64-gnu`
 
-This is the **x86_64-unknown-linux-gnu** binary for `vite-plugin-logger`
+This is the **x86_64-unknown-linux-gnu** binary for `vite-plugin-hyperlog`

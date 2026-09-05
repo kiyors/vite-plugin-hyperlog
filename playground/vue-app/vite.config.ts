@@ -1,4 +1,4 @@
-import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger/vue";
+import { requestLogger, browserLogger } from "vite-plugin-hyperlog/vue";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
 

@@ -1,5 +1,5 @@
 import contentCollections from "@content-collections/vite";
-import { requestLogger, browserLogger } from "@kiyors/vite-plugin-logger/tanstack";
+import { requestLogger, browserLogger } from "vite-plugin-hyperlog/tanstack";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";

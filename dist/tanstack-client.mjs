@@ -8,7 +8,7 @@
 *
 * @example
 * ```ts
-* import { registerTanStackRouterLogger } from "@kiyors/vite-plugin-logger/tanstack/client";
+* import { registerTanStackRouterLogger } from "vite-plugin-hyperlog/tanstack/client";
 * export const router = createRouter({ routeTree });
 * registerTanStackRouterLogger(router);
 * ```
@@ -34,7 +34,7 @@ function registerTanStackRouterLogger(router) {
 				const lastMatch = matches[matches.length - 1];
 				const routeId = lastMatch?.routeId || lastMatch?.id || lastMatch?.route?.id || toLocation.href || pathname;
 				const hotMeta = import.meta;
-				if (hotMeta.hot) hotMeta.hot.send("vite-plugin-logger:tanstack-route", {
+				if (hotMeta.hot) hotMeta.hot.send("vite-plugin-hyperlog:tanstack-route", {
 					routeId,
 					path: pathname,
 					params,
@@ -54,7 +54,7 @@ function registerTanStackRouterLogger(router) {
 				const lastMatch = matches[matches.length - 1];
 				const routeId = lastMatch?.routeId || lastMatch?.id || lastMatch?.route?.id || pathname;
 				const hotMeta = import.meta;
-				if (hotMeta.hot) hotMeta.hot.send("vite-plugin-logger:tanstack-route", {
+				if (hotMeta.hot) hotMeta.hot.send("vite-plugin-hyperlog:tanstack-route", {
 					routeId,
 					path: pathname,
 					params: null,

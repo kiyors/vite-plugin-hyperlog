@@ -1,22 +1,23 @@
 {
-  "name": "vite-plugin-logger-linux-x64-gnu",
-  "version": "0.0.8",
+  "name": "vite-plugin-hyperlog-linux-x64-gnu",
+  "version": "0.0.12",
   "description": "High-performance Vite plugin for request and browser logging, powered by Rust",
   "keywords": [
-    "N-API",
-    "NAPI",
-    "Rust",
-    "napi-rs",
-    "node-addon",
-    "node-addon-api"
+    "browser-logger",
+    "hyperlog",
+    "logger",
+    "request-logger",
+    "vite",
+    "vite-plugin",
+    "vite-plugin-hyperlog"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/kiyors/vite-plugin-logger.git"
+    "url": "git+ssh://git@github.com/kiyors/vite-plugin-hyperlog.git"
   },
   "files": [
-    "vite-plugin-logger.linux-x64-gnu.node"
+    "vite-plugin-hyperlog.linux-x64-gnu.node"
   ],
   "os": [
     "linux"
@@ -27,7 +28,7 @@
   "libc": [
     "glibc"
   ],
-  "main": "vite-plugin-logger.linux-x64-gnu.node",
+  "main": "vite-plugin-hyperlog.linux-x64-gnu.node",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

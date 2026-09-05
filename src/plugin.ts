@@ -230,8 +230,8 @@ export function browserLogger(): Plugin {
         }
       };
 
-      server.ws.on("vite-plugin-logger:browser-log", handleBrowserLog);
-      server.ws.on("vite-plugin-logger:tanstack-route", handleTanStackRoute);
+      server.ws.on("vite-plugin-hyperlog:browser-log", handleBrowserLog);
+      server.ws.on("vite-plugin-hyperlog:tanstack-route", handleTanStackRoute);
     },
   };
 }
@@ -241,7 +241,7 @@ export function browserLogger(): Plugin {
  *
  * @example
  * ```ts
- * import logger from "@kiyors/vite-plugin-logger";
+ * import logger from "vite-plugin-hyperlog";
  * export default defineConfig({
  *   plugins: [logger()],
  * });

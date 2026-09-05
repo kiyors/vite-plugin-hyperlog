@@ -1,19 +1,20 @@
 {
-  "name": "@kiyors/vite-plugin-logger",
+  "name": "vite-plugin-hyperlog",
   "version": "0.0.12",
   "description": "High-performance Vite plugin for request and browser logging, powered by Rust",
   "keywords": [
     "browser-logger",
+    "hyperlog",
     "logger",
     "request-logger",
     "vite",
     "vite-plugin",
-    "vite-plugin-logger"
+    "vite-plugin-hyperlog"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/kiyors/vite-plugin-logger.git"
+    "url": "git+ssh://git@github.com/kiyors/vite-plugin-hyperlog.git"
   },
   "files": [
     "dist/",
@@ -91,7 +92,7 @@
     ]
   },
   "napi": {
-    "binaryName": "vite-plugin-logger",
+    "binaryName": "vite-plugin-hyperlog",
     "targets": [
       "aarch64-apple-darwin",
       "x86_64-apple-darwin",

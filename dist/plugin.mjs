@@ -54,13 +54,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 		else if (process.platform === "android") {
 			if (process.arch === "arm64") {
 				try {
-					return __require("../vite-plugin-logger.android-arm64.node");
+					return __require("../vite-plugin-hyperlog.android-arm64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-android-arm64");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-android-arm64/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-android-arm64");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-android-arm64/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -68,13 +68,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm") {
 				try {
-					return __require("../vite-plugin-logger.android-arm-eabi.node");
+					return __require("../vite-plugin-hyperlog.android-arm-eabi.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-android-arm-eabi");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-android-arm-eabi/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-android-arm-eabi");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-android-arm-eabi/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -85,13 +85,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			if (process.arch === "x64") {
 				if (process.config && process.config.variables && process.config.variables.shlib_suffix === "dll.a" || process.config && process.config.variables && process.config.variables.node_target_type === "shared_library") {
 					try {
-						return __require("../vite-plugin-logger.win32-x64-gnu.node");
+						return __require("../vite-plugin-hyperlog.win32-x64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-win32-x64-gnu");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-win32-x64-gnu/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-win32-x64-gnu");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-win32-x64-gnu/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -99,13 +99,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../vite-plugin-logger.win32-x64-msvc.node");
+						return __require("../vite-plugin-hyperlog.win32-x64-msvc.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-win32-x64-msvc");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-win32-x64-msvc/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-win32-x64-msvc");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-win32-x64-msvc/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -114,13 +114,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "ia32") {
 				try {
-					return __require("../vite-plugin-logger.win32-ia32-msvc.node");
+					return __require("../vite-plugin-hyperlog.win32-ia32-msvc.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-win32-ia32-msvc");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-win32-ia32-msvc/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-win32-ia32-msvc");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-win32-ia32-msvc/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -128,13 +128,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm64") {
 				try {
-					return __require("../vite-plugin-logger.win32-arm64-msvc.node");
+					return __require("../vite-plugin-hyperlog.win32-arm64-msvc.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-win32-arm64-msvc");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-win32-arm64-msvc/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-win32-arm64-msvc");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-win32-arm64-msvc/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -143,13 +143,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			} else loadErrors.push(/* @__PURE__ */ new Error(`Unsupported architecture on Windows: ${process.arch}`));
 		} else if (process.platform === "darwin") {
 			try {
-				return __require("../vite-plugin-logger.darwin-universal.node");
+				return __require("../vite-plugin-hyperlog.darwin-universal.node");
 			} catch (e) {
 				loadErrors.push(e);
 			}
 			try {
-				const binding = __require("@kiyors/vite-plugin-logger-darwin-universal");
-				const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-darwin-universal/package.json").version;
+				const binding = __require("vite-plugin-hyperlog-darwin-universal");
+				const bindingPackageVersion = __require("vite-plugin-hyperlog-darwin-universal/package.json").version;
 				if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 				return binding;
 			} catch (e) {
@@ -157,13 +157,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			}
 			if (process.arch === "x64") {
 				try {
-					return __require("../vite-plugin-logger.darwin-x64.node");
+					return __require("../vite-plugin-hyperlog.darwin-x64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-darwin-x64");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-darwin-x64/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-darwin-x64");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-darwin-x64/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -171,13 +171,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm64") {
 				try {
-					return __require("../vite-plugin-logger.darwin-arm64.node");
+					return __require("../vite-plugin-hyperlog.darwin-arm64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-darwin-arm64");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-darwin-arm64/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-darwin-arm64");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-darwin-arm64/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -187,13 +187,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 		} else if (process.platform === "freebsd") {
 			if (process.arch === "x64") {
 				try {
-					return __require("../vite-plugin-logger.freebsd-x64.node");
+					return __require("../vite-plugin-hyperlog.freebsd-x64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-freebsd-x64");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-freebsd-x64/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-freebsd-x64");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-freebsd-x64/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -201,13 +201,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm64") {
 				try {
-					return __require("../vite-plugin-logger.freebsd-arm64.node");
+					return __require("../vite-plugin-hyperlog.freebsd-arm64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-freebsd-arm64");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-freebsd-arm64/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-freebsd-arm64");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-freebsd-arm64/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -218,13 +218,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			if (process.arch === "x64") {
 				if (isMusl()) {
 					try {
-						return __require("../vite-plugin-logger.linux-x64-musl.node");
+						return __require("../vite-plugin-hyperlog.linux-x64-musl.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-x64-musl");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-x64-musl/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-x64-musl");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-x64-musl/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -232,13 +232,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../vite-plugin-logger.linux-x64-gnu.node");
+						return __require("../vite-plugin-hyperlog.linux-x64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-x64-gnu");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-x64-gnu/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-x64-gnu");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-x64-gnu/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -248,13 +248,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			} else if (process.arch === "arm64") {
 				if (isMusl()) {
 					try {
-						return __require("../vite-plugin-logger.linux-arm64-musl.node");
+						return __require("../vite-plugin-hyperlog.linux-arm64-musl.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-arm64-musl");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-arm64-musl/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-arm64-musl");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-arm64-musl/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -262,13 +262,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../vite-plugin-logger.linux-arm64-gnu.node");
+						return __require("../vite-plugin-hyperlog.linux-arm64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-arm64-gnu");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-arm64-gnu/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-arm64-gnu");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-arm64-gnu/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -278,13 +278,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			} else if (process.arch === "arm") {
 				if (isMusl()) {
 					try {
-						return __require("../vite-plugin-logger.linux-arm-musleabihf.node");
+						return __require("../vite-plugin-hyperlog.linux-arm-musleabihf.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-arm-musleabihf");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-arm-musleabihf/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-arm-musleabihf");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-arm-musleabihf/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -292,13 +292,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../vite-plugin-logger.linux-arm-gnueabihf.node");
+						return __require("../vite-plugin-hyperlog.linux-arm-gnueabihf.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-arm-gnueabihf");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-arm-gnueabihf/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-arm-gnueabihf");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-arm-gnueabihf/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -308,13 +308,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			} else if (process.arch === "loong64") {
 				if (isMusl()) {
 					try {
-						return __require("../vite-plugin-logger.linux-loong64-musl.node");
+						return __require("../vite-plugin-hyperlog.linux-loong64-musl.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-loong64-musl");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-loong64-musl/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-loong64-musl");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-loong64-musl/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -322,13 +322,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../vite-plugin-logger.linux-loong64-gnu.node");
+						return __require("../vite-plugin-hyperlog.linux-loong64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-loong64-gnu");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-loong64-gnu/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-loong64-gnu");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-loong64-gnu/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -338,13 +338,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			} else if (process.arch === "riscv64") {
 				if (isMusl()) {
 					try {
-						return __require("../vite-plugin-logger.linux-riscv64-musl.node");
+						return __require("../vite-plugin-hyperlog.linux-riscv64-musl.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-riscv64-musl");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-riscv64-musl/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-riscv64-musl");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-riscv64-musl/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -352,13 +352,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 					}
 				} else {
 					try {
-						return __require("../vite-plugin-logger.linux-riscv64-gnu.node");
+						return __require("../vite-plugin-hyperlog.linux-riscv64-gnu.node");
 					} catch (e) {
 						loadErrors.push(e);
 					}
 					try {
-						const binding = __require("@kiyors/vite-plugin-logger-linux-riscv64-gnu");
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-riscv64-gnu/package.json").version;
+						const binding = __require("vite-plugin-hyperlog-linux-riscv64-gnu");
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-riscv64-gnu/package.json").version;
 						if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 						return binding;
 					} catch (e) {
@@ -367,13 +367,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "ppc64") {
 				try {
-					return __require("../vite-plugin-logger.linux-ppc64-gnu.node");
+					return __require("../vite-plugin-hyperlog.linux-ppc64-gnu.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-linux-ppc64-gnu");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-ppc64-gnu/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-linux-ppc64-gnu");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-ppc64-gnu/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -381,13 +381,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "s390x") {
 				try {
-					return __require("../vite-plugin-logger.linux-s390x-gnu.node");
+					return __require("../vite-plugin-hyperlog.linux-s390x-gnu.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-linux-s390x-gnu");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-linux-s390x-gnu/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-linux-s390x-gnu");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-linux-s390x-gnu/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -397,13 +397,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 		} else if (process.platform === "openharmony") {
 			if (process.arch === "arm64") {
 				try {
-					return __require("../vite-plugin-logger.openharmony-arm64.node");
+					return __require("../vite-plugin-hyperlog.openharmony-arm64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-openharmony-arm64");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-openharmony-arm64/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-openharmony-arm64");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-openharmony-arm64/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -411,13 +411,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "x64") {
 				try {
-					return __require("../vite-plugin-logger.openharmony-x64.node");
+					return __require("../vite-plugin-hyperlog.openharmony-x64.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-openharmony-x64");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-openharmony-x64/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-openharmony-x64");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-openharmony-x64/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -425,13 +425,13 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 				}
 			} else if (process.arch === "arm") {
 				try {
-					return __require("../vite-plugin-logger.openharmony-arm.node");
+					return __require("../vite-plugin-hyperlog.openharmony-arm.node");
 				} catch (e) {
 					loadErrors.push(e);
 				}
 				try {
-					const binding = __require("@kiyors/vite-plugin-logger-openharmony-arm");
-					const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-openharmony-arm/package.json").version;
+					const binding = __require("vite-plugin-hyperlog-openharmony-arm");
+					const bindingPackageVersion = __require("vite-plugin-hyperlog-openharmony-arm/package.json").version;
 					if (bindingPackageVersion !== "0.0.12" && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") throw new Error(`Native binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					return binding;
 				} catch (e) {
@@ -497,10 +497,10 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			let candidateError = null;
 			let candidateFailed = false;
 			try {
-				candidateError = __napiWasiResolveCandidate("./vite-plugin-logger.wasi.cjs", false, ["./vite-plugin-logger.wasm32-wasi.debug.wasm", "./vite-plugin-logger.wasm32-wasi.wasm"]);
+				candidateError = __napiWasiResolveCandidate("./vite-plugin-hyperlog.wasi.cjs", false, ["./vite-plugin-hyperlog.wasm32-wasi.debug.wasm", "./vite-plugin-hyperlog.wasm32-wasi.wasm"]);
 				candidateFailed = candidateError !== null;
 				if (!candidateFailed) {
-					wasiBinding = __require("./vite-plugin-logger.wasi.cjs");
+					wasiBinding = __require("./vite-plugin-hyperlog.wasi.cjs");
 					nativeBinding = wasiBinding;
 					wasiBindingLoaded = true;
 				}
@@ -517,14 +517,14 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 			let candidateError = null;
 			let candidateFailed = false;
 			try {
-				candidateError = __napiWasiResolveCandidate("@kiyors/vite-plugin-logger-wasm32-wasi", true, void 0);
+				candidateError = __napiWasiResolveCandidate("vite-plugin-hyperlog-wasm32-wasi", true, void 0);
 				candidateFailed = candidateError !== null;
 				if (!candidateFailed) {
 					if (process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== "0") {
-						const bindingPackageVersion = __require("@kiyors/vite-plugin-logger-wasm32-wasi/package.json").version;
+						const bindingPackageVersion = __require("vite-plugin-hyperlog-wasm32-wasi/package.json").version;
 						if (bindingPackageVersion !== "0.0.12") throw new Error(`WASI binding package version mismatch, expected 0.0.12 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`);
 					}
-					wasiBinding = __require("@kiyors/vite-plugin-logger-wasm32-wasi");
+					wasiBinding = __require("vite-plugin-hyperlog-wasm32-wasi");
 					nativeBinding = wasiBinding;
 					wasiBindingLoaded = true;
 				}
@@ -679,8 +679,8 @@ function browserLogger() {
 				const logString = (0, import_vite_plugin_logger.formatRouteLog)(routeId || path, path, params ?? null, durationMs ? Number(durationMs) : null, Boolean(isPreload));
 				if (logString) console.log(logString);
 			};
-			server.ws.on("vite-plugin-logger:browser-log", handleBrowserLog);
-			server.ws.on("vite-plugin-logger:tanstack-route", handleTanStackRoute);
+			server.ws.on("vite-plugin-hyperlog:browser-log", handleBrowserLog);
+			server.ws.on("vite-plugin-hyperlog:tanstack-route", handleTanStackRoute);
 		}
 	};
 }
@@ -689,7 +689,7 @@ function browserLogger() {
 *
 * @example
 * ```ts
-* import logger from "@kiyors/vite-plugin-logger";
+* import logger from "vite-plugin-hyperlog";
 * export default defineConfig({
 *   plugins: [logger()],
 * });
