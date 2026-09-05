@@ -17,7 +17,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await browser.close();
+  await browser?.close();
 });
 
 for (const fw of frameworks) {

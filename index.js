@@ -704,3 +704,6 @@ module.exports.formatBrowserLog = nativeBinding.formatBrowserLog
 module.exports.formatLogEntry = nativeBinding.formatLogEntry
 module.exports.formatRouteLog = nativeBinding.formatRouteLog
 module.exports.getBrowserLoggerScript = nativeBinding.getBrowserLoggerScript
+module.exports.parseRouteTreeAst = nativeBinding.parseRouteTreeAst
+module.exports.remapSourcePosition = nativeBinding.remapSourcePosition
+module.exports.remapStackTrace = nativeBinding.remapStackTrace

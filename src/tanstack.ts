@@ -3,7 +3,7 @@ import path from "node:path";
 
 import type { Plugin } from "vite";
 
-import { formatLogEntry } from "../index.js";
+import { formatLogEntry, parseRouteTreeAst } from "../index.js";
 import { browserLogger, type RequestLoggerConfig } from "./plugin";
 
 export interface TanStackLoggerConfig extends RequestLoggerConfig {
@@ -46,11 +46,30 @@ export interface RouteMatcher {
 export function parseRouteTreeContent(content: string): RouteMatcher[] {
   const routes = new Set<string>();
 
-  const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
-  for (const match of matches) {
-    const p = match[1].trim();
-    if (p && !p.startsWith("/api") && !p.includes("node_modules")) {
-      routes.add(p);
+  try {
+    const astRoutes = parseRouteTreeAst(content);
+    for (const r of astRoutes) {
+      routes.add(r);
+    }
+  } catch {
+    // Fallback to regex in case AST parsing fails or runs in a constrained environment
+    const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
+    for (const match of matches) {
+      const p = match[1].trim();
+      if (p && !p.startsWith("/api") && !p.includes("node_modules")) {
+        routes.add(p);
+      }
+    }
+  }
+
+  // If AST found nothing, try regex as extra safety
+  if (routes.size === 0) {
+    const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
+    for (const match of matches) {
+      const p = match[1].trim();
+      if (p && !p.startsWith("/api") && !p.includes("node_modules")) {
+        routes.add(p);
+      }
     }
   }
 

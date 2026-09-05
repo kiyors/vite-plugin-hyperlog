@@ -2,9 +2,11 @@
 
 pub mod ansi;
 pub mod browser;
+pub mod oxc_routes;
 pub mod request;
 pub mod route;
 pub mod server_fn;
+pub mod sourcemap;
 
 use napi_derive::napi;
 
@@ -56,4 +58,23 @@ pub fn format_browser_log(
 #[napi]
 pub fn get_browser_logger_script() -> String {
   browser::get_browser_logger_script()
+}
+
+#[napi]
+pub fn parse_route_tree_ast(content: String) -> Vec<String> {
+  oxc_routes::parse_route_tree_ast(&content)
+}
+
+#[napi]
+pub fn remap_source_position(
+  sourcemap_json: String,
+  line: u32,
+  column: u32,
+) -> Option<sourcemap::RemappedPosition> {
+  sourcemap::remap_source_position(&sourcemap_json, line, column)
+}
+
+#[napi]
+pub fn remap_stack_trace(sourcemap_json: String, stack: String) -> String {
+  sourcemap::remap_stack_trace(&sourcemap_json, &stack)
 }

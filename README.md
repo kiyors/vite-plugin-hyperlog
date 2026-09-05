@@ -57,7 +57,7 @@ For TanStack applications, import from `@kiyors/vite-plugin-logger/tanstack`. It
 
 - **Server Function Decoding**: Automatically decodes `/_serverFn` base64 endpoints to display human-readable function names and source files (e.g. `[server-fn] 200 GET getAuthSession (routes/__root.tsx) 18.82ms`), flagging errors with `❌`.
 - **Duplicate Batching**: Groups and debounces consecutive duplicate server function calls (e.g. `(x5)`) during component mounts and revalidations.
-- **Route Pattern Matching**: Reads `src/routeTree.gen.ts` to display parameterized route patterns (e.g. `/$teamId/channels/$channelId`) alongside the requested URL.
+- **Route Pattern Matching**: Powered by native [OXC](https://oxc.rs) AST parsing to extract route patterns and types from `src/routeTree.gen.ts` with 0 regex fragility, displaying parameterized route patterns (e.g. `/$teamId/channels/$channelId`) alongside the requested URL.
 - **Module Noise Filtering**: Automatically filters out internal Vite `.tsx`/`.ts` module compilation noise and code-split queries (`?tsr-split=component`).
 
 ```typescript
@@ -112,9 +112,9 @@ registerTanStackRouterLogger(router);
 `browserLogger` captures client-side events via WebSockets and formats them natively with Rust:
 
 - **Clickable Source Callers**: Automatically resolves caller locations (e.g. `(src/components/Login.tsx:42)`) so you can cmd-click directly to your code in modern terminals (VS Code, iTerm, Warp, Ghostty).
-- **ANSI Syntax Highlighting**: Objects and JSON logged from the browser are tokenized with colorized keys, strings, numbers, and booleans.
+- **ANSI Syntax Highlighting**: Powered by `colored_json` to colorize JSON and objects logged from the browser with zero-copy ANSI styling for keys, strings, numbers, booleans, and nulls.
 - **Timer Support**: Supports `console.time('label')` and `console.timeEnd('label')` to track client-side performance.
-- **Intelligent Stack Trace Cleaning**: On errors, highlights user application frames while dimming `node_modules` and framework noise.
+- **Intelligent Stack Trace Cleaning & Sourcemap Remapping**: Powered by `regex` and `oxc_sourcemap` to parse browser error frames, highlight user application frames (`➜ src/lib/api.ts:25:11 in fetchUser`), dim dependency noise, and remap positions to original TypeScript source files.
 - **Flood Protection**: Rapid repetitive logs (e.g. from render loops or scroll listeners) are debounced and collapsed with a repeat counter (`(x5)`).
 
 ```text

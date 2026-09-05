@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { formatBrowserLog, formatLogEntry, formatRouteLog } from "../index.js";
+import {
+  formatBrowserLog,
+  formatLogEntry,
+  formatRouteLog,
+  parseRouteTreeAst,
+  remapSourcePosition,
+  remapStackTrace,
+} from "../index.js";
 import { parseRouteTreeContent } from "../src/tanstack";
 
 describe("Route Tree Parser", () => {
@@ -66,6 +73,31 @@ describe("Route Tree Parser", () => {
     expect(findMatch("/team-alpha/channels/general")).toBe("/$teamId/channels/$channelId");
     expect(findMatch("/team-alpha/issues")).toBe("/$teamId/issues");
     expect(findMatch("/unregistered/deep/path/that/does/not/match")).toBeNull();
+  });
+
+  it("extracts routes with native OXC AST parser including interfaces and calls", () => {
+    const tsCode = `
+      import { createFileRoute } from '@tanstack/react-router'
+
+      export const Route = createFileRoute('/$teamId/projects/$projectId')({
+        component: ProjectComponent,
+      })
+
+      export interface FileRoutesByFullPath {
+        '/': typeof IndexRoute
+        '/login': typeof LoginRoute
+        '/$teamId/settings': typeof SettingsRoute
+      }
+
+      export type AppRoutes = '/' | '/dashboard';
+    `;
+
+    const routes = parseRouteTreeAst(tsCode);
+    expect(routes).toContain("/$teamId/projects/$projectId");
+    expect(routes).toContain("/");
+    expect(routes).toContain("/login");
+    expect(routes).toContain("/$teamId/settings");
+    expect(routes).toContain("/dashboard");
   });
 });
 
@@ -189,8 +221,8 @@ describe("Native Rust formatBrowserLog", () => {
     const json = JSON.stringify({ user: "alex", count: 10, active: true });
     const log = formatBrowserLog("log", json, "src/main.ts:15", null);
     expect(log).not.toBeNull();
-    expect(log).toContain('"user"');
-    expect(log).toContain('"alex"');
+    expect(log).toContain("user");
+    expect(log).toContain("alex");
     expect(log).toContain("10");
     expect(log).toContain("true");
     expect(log).toContain("(src/main.ts:15)");
@@ -212,5 +244,31 @@ describe("Native Rust formatBrowserLog", () => {
     expect(log).not.toBeNull();
     expect(log).toContain("[browser warn]");
     expect(log).toContain("(x5)");
+  });
+});
+
+describe("Native OXC SourceMap Remapping", () => {
+  const sampleSourceMap = JSON.stringify({
+    version: 3,
+    file: "bundle.js",
+    sources: ["src/App.tsx"],
+    sourcesContent: ["const App = () => { throw new Error('Crash'); };"],
+    names: ["App", "Error"],
+    mappings: "AAAA,MAAMA,GAAM,QAAQ,IAAIC,GAAM",
+  });
+
+  it("remaps compiled positions to original source TypeScript file and lines", () => {
+    const pos = remapSourcePosition(sampleSourceMap, 1, 6);
+    expect(pos).not.toBeNull();
+    expect(pos?.source).toBe("src/App.tsx");
+    expect(pos?.line).toBe(1);
+    expect(pos?.name).toBe("App");
+  });
+
+  it("remaps error stack trace frames using oxc_sourcemap and regex", () => {
+    const stack = "Error: Crash\n    at bundle.js:1:6";
+    const remapped = remapStackTrace(sampleSourceMap, stack);
+    expect(remapped).toContain("src/App.tsx:1");
+    expect(remapped).toContain("App");
   });
 });

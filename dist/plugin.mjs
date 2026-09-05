@@ -557,6 +557,9 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 	module.exports.formatLogEntry = nativeBinding.formatLogEntry;
 	module.exports.formatRouteLog = nativeBinding.formatRouteLog;
 	module.exports.getBrowserLoggerScript = nativeBinding.getBrowserLoggerScript;
+	module.exports.parseRouteTreeAst = nativeBinding.parseRouteTreeAst;
+	module.exports.remapSourcePosition = nativeBinding.remapSourcePosition;
+	module.exports.remapStackTrace = nativeBinding.remapStackTrace;
 }));
 //#endregion
 //#region src/plugin.ts
@@ -669,4 +672,6 @@ function browserLogger() {
 	};
 }
 //#endregion
-export { browserLogger, requestLogger, require_vite_plugin_logger as t };
+var remapSourcePosition = import_vite_plugin_logger.remapSourcePosition;
+var remapStackTrace = import_vite_plugin_logger.remapStackTrace;
+export { browserLogger, remapSourcePosition, remapStackTrace, requestLogger, require_vite_plugin_logger as t };

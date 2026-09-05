@@ -1,63 +1,40 @@
+use std::sync::LazyLock;
+
+use regex::Regex;
+
 use crate::ansi;
 
-fn colorize_json_value(val: &serde_json::Value, indent: usize) -> String {
-  let indent_str = "  ".repeat(indent);
-  match val {
-    serde_json::Value::Null => format!("{}null{}", ansi::DIM, ansi::RESET),
-    serde_json::Value::Bool(b) => format!("{}{}{}", ansi::MAGENTA, b, ansi::RESET),
-    serde_json::Value::Number(n) => format!("{}{}{}", ansi::YELLOW, n, ansi::RESET),
-    serde_json::Value::String(s) => format!("{}\"{}\"{}", ansi::GREEN, s, ansi::RESET),
-    serde_json::Value::Array(arr) => {
-      if arr.is_empty() {
-        return "[]".to_string();
-      }
-      if arr.len() <= 3 && arr.iter().all(|v| !v.is_object() && !v.is_array()) {
-        let items: Vec<String> = arr.iter().map(|v| colorize_json_value(v, 0)).collect();
-        return format!("[ {} ]", items.join(", "));
-      }
-      let mut out = String::from("[\n");
-      for (i, item) in arr.iter().enumerate() {
-        out.push_str(&format!(
-          "  {}{}{}",
-          indent_str,
-          colorize_json_value(item, indent + 1),
-          if i + 1 < arr.len() { "," } else { "" }
-        ));
-        out.push('\n');
-      }
-      out.push_str(&format!("{}]", indent_str));
-      out
-    }
-    serde_json::Value::Object(obj) => {
-      if obj.is_empty() {
-        return "{}".to_string();
-      }
-      let mut out = String::from("{\n");
-      let entries: Vec<_> = obj.iter().collect();
-      for (i, (key, value)) in entries.iter().enumerate() {
-        out.push_str(&format!(
-          "  {}{}\"{}\"{}: {}{}",
-          indent_str,
-          ansi::CYAN,
-          key,
-          ansi::RESET,
-          colorize_json_value(value, indent + 1),
-          if i + 1 < entries.len() { "," } else { "" }
-        ));
-        out.push('\n');
-      }
-      out.push_str(&format!("{}}}", indent_str));
-      out
-    }
-  }
-}
+static STACK_FRAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+  Regex::new(
+    r#"^\s*(?:at\s+)?(?:(?P<fn>[a-zA-Z0-9_$<>.]+)\s*(?:\(cid:[^)]+\))?\s*(?:@|\())?(?:https?://[^/]+(?:/@fs)?)?(?P<path>/?[a-zA-Z0-9_$./@-]+(?:\.[a-zA-Z0-9]+)?):(?P<line>\d+):(?P<col>\d+)\)?"#,
+  )
+  .unwrap()
+});
 
 pub fn colorize_json(message: &str) -> String {
   if let Ok(val) = serde_json::from_str::<serde_json::Value>(message) {
-    colorize_json_value(&val, 0)
-  } else {
-    message.to_string()
+    if val.is_object() || val.is_array() {
+      let is_small = match &val {
+        serde_json::Value::Object(o) => {
+          o.len() <= 3 && o.values().all(|v| !v.is_object() && !v.is_array())
+        }
+        serde_json::Value::Array(a) => {
+          a.len() <= 4 && a.iter().all(|v| !v.is_object() && !v.is_array())
+        }
+        _ => false,
+      };
+
+      if is_small {
+        let formatter = colored_json::ColoredFormatter::new(colored_json::CompactFormatter);
+        if let Ok(s) = formatter.to_colored_json(&val, colored_json::ColorMode::On) {
+          return s;
+        }
+      } else if let Ok(s) = colored_json::to_colored_json(&val, colored_json::ColorMode::On) {
+        return s;
+      }
+    }
   }
+  message.to_string()
 }
 
 pub fn clean_error_stack(message: &str) -> String {
@@ -71,30 +48,61 @@ pub fn clean_error_stack(message: &str) -> String {
   result.push(format!("{}{}{}", ansi::RED, lines[0], ansi::RESET));
 
   for line in &lines[1..] {
-    let trimmed = line.trim_start();
-    if !trimmed.starts_with("at ") {
-      result.push(format!("{}{}{}", ansi::DIM, line, ansi::RESET));
-      continue;
-    }
+    let trimmed = line.trim();
+    if let Some(caps) = STACK_FRAME_RE.captures(trimmed) {
+      let mut path = caps.name("path").map(|m| m.as_str()).unwrap_or("");
+      if let Some(stripped) = path.strip_prefix('/') {
+        path = stripped;
+      }
+      let line_num = caps.name("line").map(|m| m.as_str()).unwrap_or("0");
+      let col_num = caps.name("col").map(|m| m.as_str()).unwrap_or("0");
+      let fn_name = caps.name("fn").map(|m| m.as_str());
 
-    let is_user_code = (trimmed.contains("/src/")
-      || trimmed.contains("src/")
-      || trimmed.contains("routes/")
-      || trimmed.contains("components/"))
-      && !trimmed.contains("node_modules");
+      let is_user_code = (path.starts_with("src/")
+        || path.contains("/src/")
+        || path.contains("routes/")
+        || path.contains("components/"))
+        && !path.contains("node_modules");
 
-    if is_user_code {
-      // Highlight user application frame
-      result.push(format!(
-        "  {}➜{} {}{}{}",
-        ansi::RED,
-        ansi::RESET,
-        ansi::WHITE_BOLD,
-        trimmed,
-        ansi::RESET
-      ));
+      if is_user_code {
+        let fn_suffix = match fn_name {
+          Some(f) => format!(
+            " {}in{} {}{}{}",
+            ansi::DIM,
+            ansi::RESET,
+            ansi::CYAN,
+            f,
+            ansi::RESET
+          ),
+          None => String::new(),
+        };
+        result.push(format!(
+          "  {}➜{} {}{}:{}:{}{}{}",
+          ansi::RED,
+          ansi::RESET,
+          ansi::WHITE_BOLD,
+          path,
+          line_num,
+          col_num,
+          ansi::RESET,
+          fn_suffix
+        ));
+      } else {
+        let fn_suffix = match fn_name {
+          Some(f) => format!(" in {}", f),
+          None => String::new(),
+        };
+        result.push(format!(
+          "    {}{}:{}:{}{}{}",
+          ansi::DIM,
+          path,
+          line_num,
+          col_num,
+          fn_suffix,
+          ansi::RESET
+        ));
+      }
     } else {
-      // Dim dependency and framework noise
       result.push(format!("  {}{}{}", ansi::DIM, trimmed, ansi::RESET));
     }
   }
@@ -355,8 +363,8 @@ mod tests {
   fn test_colorize_json() {
     let json = r#"{"name":"test","count":42,"active":true}"#;
     let colored = colorize_json(json);
-    assert!(colored.contains("\"name\""));
-    assert!(colored.contains("\"test\""));
+    assert!(colored.contains("name"));
+    assert!(colored.contains("test"));
     assert!(colored.contains("42"));
     assert!(colored.contains("true"));
   }

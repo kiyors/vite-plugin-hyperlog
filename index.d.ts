@@ -7,3 +7,16 @@ export declare function formatLogEntry(originalUrl: string, method: string, stat
 export declare function formatRouteLog(routeId: string, path: string, params?: string | undefined | null, durationMs?: number | undefined | null, isPreload?: boolean | undefined | null): string | null
 
 export declare function getBrowserLoggerScript(): string
+
+export declare function parseRouteTreeAst(content: string): Array<string>
+
+export interface RemappedPosition {
+  source?: string
+  line: number
+  column: number
+  name?: string
+}
+
+export declare function remapSourcePosition(sourcemapJson: string, line: number, column: number): RemappedPosition | null
+
+export declare function remapStackTrace(sourcemapJson: string, stack: string): string

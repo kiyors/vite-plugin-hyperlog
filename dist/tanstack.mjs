@@ -5,10 +5,22 @@ import path from "node:path";
 var import_vite_plugin_logger = require_vite_plugin_logger();
 function parseRouteTreeContent(content) {
 	const routes = /* @__PURE__ */ new Set();
-	const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
-	for (const match of matches) {
-		const p = match[1].trim();
-		if (p && !p.startsWith("/api") && !p.includes("node_modules")) routes.add(p);
+	try {
+		const astRoutes = (0, import_vite_plugin_logger.parseRouteTreeAst)(content);
+		for (const r of astRoutes) routes.add(r);
+	} catch {
+		const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
+		for (const match of matches) {
+			const p = match[1].trim();
+			if (p && !p.startsWith("/api") && !p.includes("node_modules")) routes.add(p);
+		}
+	}
+	if (routes.size === 0) {
+		const matches = content.matchAll(/(?:fullPath|path|id):\s*['"](\/[^'"]*)['"]/g);
+		for (const match of matches) {
+			const p = match[1].trim();
+			if (p && !p.startsWith("/api") && !p.includes("node_modules")) routes.add(p);
+		}
 	}
 	const matchers = [];
 	for (const route of routes) {
