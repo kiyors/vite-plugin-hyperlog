@@ -112,23 +112,12 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v7
-      - name: Setup node
-        uses: actions/setup-node@v7
+      # Installs the pinned pnpm and the Node version under test in one step.
+      # `version` is omitted because packageManager already declares pnpm 12.
+      - uses: pnpm/setup@v1
         with:
-          node-version: ${{ matrix.node }}
-          architecture: ${{ matrix.settings.architecture }}
-      - name: Install pnpm
-        run: npm install -g pnpm@11.18.0
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent | tr '\\' '/')" >> $GITHUB_ENV
-      - uses: actions/cache@v6
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-${{ matrix.settings.architecture }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.settings.architecture }}-pnpm-store-
+          runtime: node@${{ matrix.node }}
+          cache: true
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Download artifacts
