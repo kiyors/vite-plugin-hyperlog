@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use crate::ansi;
+use crate::sanitize;
 
 #[must_use]
 pub fn format_route_log(
@@ -19,6 +20,10 @@ pub fn format_route_log(
   };
 
   let action_symbol = if preload { "⤓" } else { "➜" };
+
+  // Untrusted: route_id and path arrive from a client POST body.
+  let route_id = sanitize::sanitize(route_id);
+  let path = sanitize::sanitize(path);
 
   let mut buf = String::with_capacity(128);
   ansi::write_now_time(&mut buf);
@@ -39,6 +44,7 @@ pub fn format_route_log(
 
   if let Some(p) = params {
     if !p.is_empty() && p != "{}" {
+      let p = sanitize::sanitize(p);
       write!(buf, " {}(params: {}){}", ansi::DIM, p, ansi::RESET).ok()?;
     }
   }

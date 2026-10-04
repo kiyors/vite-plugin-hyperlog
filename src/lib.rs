@@ -10,10 +10,12 @@
 
 pub mod ansi;
 pub mod browser;
+pub mod diagnostic;
 pub mod json_utils;
 pub mod oxc_routes;
 pub mod request;
 pub mod route;
+pub mod sanitize;
 pub mod server_fn;
 pub mod sourcemap;
 pub mod stack_trace;
@@ -65,6 +67,16 @@ pub fn format_browser_log(
   repeat_count: Option<u32>,
 ) -> Option<String> {
   browser::format_browser_log(&log_type, &message, caller.as_deref(), repeat_count)
+}
+
+#[napi]
+#[must_use]
+pub fn format_graph_reevaluation(
+  distinct_modules: u32,
+  repeated_requests: u32,
+  window_ms: f64,
+) -> String {
+  diagnostic::format_graph_reevaluation(distinct_modules, repeated_requests, window_ms)
 }
 
 #[napi]

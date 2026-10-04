@@ -1,4 +1,4 @@
-import { browserLogger, createFrameworkLogger } from "./plugin.mjs";
+import { i as createFrameworkLogger, n as browserLogger } from "./plugin-shared.mjs";
 //#region src/vue.ts
 const { requestLogger, logger } = createFrameworkLogger("/@vite-plugin-vue/");
 //#endregion

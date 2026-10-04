@@ -4,10 +4,14 @@ A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
 
 > **Note**: This plugin supports multiple frameworks via tailored entry points (React, Vue, Svelte, Solid, and TanStack).
 
+> **Upgrading to 0.2.0?** Two defaults changed. See [CHANGELOG.md](CHANGELOG.md)
+> for the migration notes — in short, set `excludeModules: false` if you relied on
+> seeing your own `/src/**` modules logged.
+
 ## Features
 
-- **`requestLogger`**: High-performance HTTP request logging. Replaces Vite's default logger with a highly optimized Rust-powered logger. Tracks duration times, tracks aborted connections, and formats output with ANSI colors instantly.
-- **`browserLogger`**: Client-side console logging in your terminal. Automatically intercepts `console.log`, `console.error`, and uncaught exceptions from your browser, securely routes them to the Vite dev server via WebSockets, and prints them to your backend terminal. Framework-agnostic and universally injected.
+- **`requestLogger`**: High-performance HTTP request logging. Replaces Vite's default logger with a highly optimized Rust-powered logger. Tracks duration times, reports aborted requests as `499`, collapses repeated requests with a repeat counter, and formats output with ANSI colors instantly.
+- **`browserLogger`**: Client-side console logging in your terminal. Automatically intercepts `console.log`, `console.error`, and uncaught exceptions from your browser, securely routes them to the Vite dev server via WebSockets, and prints them to your backend terminal. Framework-agnostic and universally injected. Dev-server only, so nothing is injected into production builds.
 
 ## Installation
 
@@ -46,10 +50,61 @@ requestLogger({
   // Also accepts lowercase ("get", "post", ...) and title case ("Get", "Post", ...)
   excludeReqType: ["OPTIONS", "HEAD"],
 
-  // Custom URL substrings to exclude from the logs
+  // Patterns to exclude. A pattern starting with "/" must match a whole path
+  // segment, so "/api" matches "/api/users" but not "/api-key" or
+  // "/dashboard/apiSettings". Anything else is a plain substring match, which is
+  // what query patterns like "?import" need.
   excludeUrls: ["/my-custom-endpoint"],
+
+  // Filter Vite module noise: both dependency modules ("/node_modules/",
+  // "/@vite", "/@id/") and your own source modules ("/src/**", *.ts|tsx|js|css).
+  // Set to false to log every module request. Default: true
+  excludeModules: true,
+
+  // Hide "/api" requests. Matches the /api path segment only, so "/api-key" is
+  // still logged. Default: false
+  excludeApis: false,
+
+  // Collapse repeats of the same URL into one trailing "(xN)" line instead of
+  // printing a line each. Default: true
+  groupRepeats: true,
+
+  // Window in ms used to group repeats. Default: 1000
+  repeatWindowMs: 1000,
+
+  // Warn when many distinct modules are requested a second time with no document
+  // request in between, which means the entry graph ran twice in one page load.
+  // Default: true
+  detectGraphReevaluation: true,
+
+  // Map a request URL to a route pattern for display, e.g. "/$teamId/issues".
+  // Only used when you want to supply your own patterns.
+  resolveRoute: (url) => (url.startsWith("/dashboard") ? "/dashboard/*" : undefined),
 });
 ```
+
+### Repeated Requests & Duplicate Graph Loads
+
+By default, repeats of the same URL are collapsed into a single trailing line:
+
+```bash
+22:57:03 [route] 200 GET /dashboard 12.40ms
+22:57:04 [route] 200 GET /dashboard 96.10ms (x2)
+```
+
+If many _distinct_ modules are requested a second time with no document request in
+between, the entry graph has run twice inside one page load. The plugin reports
+this rather than leaving you to work it out from the request list:
+
+```bash
+22:57:10  module graph re-evaluated 24 modules requested again (48 requests total) within 1934ms
+     ↳ no document request between them, so the entry graph ran twice in one page load
+     ↳ look for a duplicate <script type="module"> in index.html, or a cache-busted dynamic import() of your entry
+```
+
+The two usual causes are a duplicated entry `<script>` in `index.html` and a
+cache-busted dynamic `import()` of your entry module. Set
+`detectGraphReevaluation: false` to silence it.
 
 ### TanStack Start & TanStack Router
 
@@ -110,6 +165,15 @@ registerTanStackRouterLogger(router);
 22:58:01 [route]     ➜ /team-alpha/issues  [/$teamId/issues]  (24.5ms)
 22:58:05 [preload]   ⤓ /$teamId/settings  (preloaded in 12.0ms)
 ```
+
+### React Router v7 Future Flags
+
+If you use React Router v6, the browser logs two future-flag warnings on startup.
+They are opt-in and nothing is broken, but adopting them makes the v7 upgrade
+mechanical. See [docs/react-router-future-flags.md](docs/react-router-future-flags.md)
+for the correct flag placement — note that `v7_startTransition` is read from the
+_render_ `future` prop and must be set on `<RouterProvider>` or `<BrowserRouter>`,
+not only on `createBrowserRouter`.
 
 ### Enhanced Browser Logging
 

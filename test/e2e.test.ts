@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,6 +8,35 @@ import treeKill from "tree-kill";
 import { test, expect, beforeAll, afterAll } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// pnpm/npm name the local bin `vite` on POSIX but `vite.cmd` on Windows.
+const isWindows = process.platform === "win32";
+const viteBinName = isWindows ? "vite.cmd" : "vite";
+
+function localViteBin(root: string): string {
+  return path.resolve(root, "node_modules/.bin", viteBinName);
+}
+
+// `__dirname` can resolve through a symlink into a read-only store (nix, etc.),
+// which puts the spawned dev server outside the workspace so it cannot find the
+// local Vite install. Pick whichever candidate root actually has the local Vite.
+const repoRootCandidates = [process.cwd(), path.resolve(__dirname, "..")];
+const repoRoot = repoRootCandidates.find((dir) => existsSync(localViteBin(dir))) ?? repoRootCandidates[0];
+
+/**
+ * Spawns the workspace's own Vite rather than going through `npx`.
+ *
+ * `npx vite` silently downloads a different Vite when the local bin link is
+ * missing, which then fails to resolve the workspace plugin at all.
+ */
+function spawnVite(cwd: string, args: string[], env?: NodeJS.ProcessEnv): ChildProcess {
+  const spawnEnv = env ? { ...process.env, ...env } : process.env;
+  const localBin = localViteBin(repoRoot);
+  if (existsSync(localBin)) {
+    return spawn(localBin, args, { cwd, shell: isWindows, env: spawnEnv });
+  }
+  return spawn("npx", ["vite", ...args], { cwd, shell: true, env: spawnEnv });
+}
 
 const frameworks = ["react", "vue", "svelte", "solid"];
 
@@ -34,12 +64,9 @@ for (const fw of frameworks) {
     const port = Math.floor(Math.random() * 10000) + 10000;
 
     await new Promise<void>((resolve, reject) => {
-      const cwd = path.resolve(__dirname, `../playground/${fw}-app`);
+      const cwd = path.resolve(repoRoot, `playground/${fw}-app`);
 
-      devServer = spawn("npx", ["vite", "--port", port.toString(), "--strictPort", "--clearScreen", "false"], {
-        cwd,
-        shell: true,
-      });
+      devServer = spawnVite(cwd, ["--port", port.toString(), "--strictPort", "--clearScreen", "false"]);
 
       devServer.stdout?.on("data", (data) => {
         output += data.toString();
@@ -110,16 +137,12 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
   const port = Math.floor(Math.random() * 10000) + 10000;
 
   await new Promise<void>((resolve, reject) => {
-    const cwd = path.resolve(__dirname, "../playground/tanstack-start");
+    const cwd = path.resolve(repoRoot, "playground/tanstack-start");
 
-    devServer = spawn(
-      "npx",
-      ["vite", "dev", "--force", "--port", port.toString(), "--strictPort", "--clearScreen", "false"],
-      {
-        cwd,
-        shell: true,
-        env: { ...process.env, NODE_ENV: "development" },
-      },
+    devServer = spawnVite(
+      cwd,
+      ["dev", "--force", "--port", port.toString(), "--strictPort", "--clearScreen", "false"],
+      { NODE_ENV: "development" },
     );
 
     devServer.stdout?.on("data", (data) => {

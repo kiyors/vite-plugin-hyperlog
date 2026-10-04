@@ -37,8 +37,42 @@ interface HotMeta {
   hot?: HotClient;
 }
 
+/**
+ * Set `localStorage.setItem("vite-plugin-hyperlog:debug", "1")` to surface the
+ * errors this module swallows.
+ *
+ * Swallowing is deliberate: this is telemetry, and a logging failure must never
+ * break the host app or a router navigation. But silent catches make genuine
+ * bugs invisible, so failures are reported when debugging is explicitly enabled.
+ */
+const DEBUG_KEY = "vite-plugin-hyperlog:debug";
+
+function isDebugEnabled(): boolean {
+  try {
+    // localStorage throws in sandboxed frames and some privacy modes.
+    return import.meta.env?.DEV === true && globalThis.localStorage?.getItem(DEBUG_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reports a swallowed failure when debugging is enabled.
+ *
+ * Takes a rendered string rather than the thrown value: the value is untrusted
+ * and never inspected, and a `catch` binding cannot be annotated with anything
+ * narrower than `unknown`, so stringifying at the catch site keeps this honest.
+ */
+function reportSwallowed(where: string, detail: string): void {
+  if (!isDebugEnabled()) return;
+  console.warn(`[vite-plugin-hyperlog] ${where} failed: ${detail}`);
+}
+
 declare global {
   var __HYPERLOG_HOT__: HotClient | undefined;
+  // Set by @vitejs/plugin-react's preamble. TanStack apps commonly use the React
+  // plugin, so this stays as a fallback for when this module is evaluated before
+  // `import.meta.hot` is populated. It is read defensively and never assumed.
   var __vite_plugin_react_preamble_installed__: HotClient | undefined;
 }
 
@@ -61,7 +95,9 @@ function sendRouteEvent(payload: {
       hot.send("vite-plugin-hyperlog:tanstack-route", payload);
       return;
     }
-  } catch {}
+  } catch (err) {
+    reportSwallowed("hot transport", String(err));
+  }
 
   try {
     if ("fetch" in globalThis) {
@@ -69,9 +105,11 @@ function sendRouteEvent(payload: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }).catch(() => {});
+      }).catch((err: Error) => reportSwallowed("fetch transport", err.message));
     }
-  } catch {}
+  } catch (err) {
+    reportSwallowed("fetch transport", String(err));
+  }
 }
 
 /**
@@ -86,6 +124,11 @@ function sendRouteEvent(payload: {
  * ```
  */
 export function registerTanStackRouterLogger(router: TanStackRouterLike): void {
+  // Imported from app code, this module is not covered by the server plugins'
+  // `apply: "serve"` gate, so guard explicitly to keep it out of production bundles.
+  if (!import.meta.env?.DEV) {
+    return;
+  }
   if (!("window" in globalThis) || !router || !("subscribe" in router)) {
     return;
   }
@@ -96,8 +139,9 @@ export function registerTanStackRouterLogger(router: TanStackRouterLike): void {
     router.subscribe("onBeforeNavigate", () => {
       navStartTime = performance.now();
     });
-  } catch {
-    // Ignore if not supported
+  } catch (err) {
+    // Older routers may not support this event at all.
+    reportSwallowed("subscribe onBeforeNavigate", String(err));
   }
 
   try {
@@ -145,12 +189,14 @@ export function registerTanStackRouterLogger(router: TanStackRouterLike): void {
           durationMs,
           isPreload: false,
         });
-      } catch {
-        // Ignore logging errors in production or during unmount
+      } catch (err) {
+        // A router event handler must never throw back into the router.
+        reportSwallowed("onResolved handler", String(err));
       }
     });
-  } catch {
-    // Ignore if onResolved is not supported
+  } catch (err) {
+    // Older routers may not support this event at all.
+    reportSwallowed("subscribe onResolved", String(err));
   }
 
   try {
@@ -178,11 +224,13 @@ export function registerTanStackRouterLogger(router: TanStackRouterLike): void {
           durationMs: null,
           isPreload: true,
         });
-      } catch {
-        // Ignore
+      } catch (err) {
+        // A router event handler must never throw back into the router.
+        reportSwallowed("onPreloaded handler", String(err));
       }
     });
-  } catch {
-    // onPreloaded might not be supported on all versions
+  } catch (err) {
+    // onPreloaded might not be supported on all versions.
+    reportSwallowed("subscribe onPreloaded", String(err));
   }
 }

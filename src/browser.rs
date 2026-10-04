@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use crate::ansi;
+use crate::sanitize;
 
 use crate::stack_trace::parse_stack_frame;
 
@@ -175,6 +176,11 @@ pub fn format_browser_log(
     return None;
   }
 
+  // Untrusted: the served page controls this text. Strip control characters so a
+  // page cannot clear the terminal or forge log lines.
+  let message = sanitize::sanitize(message);
+  let message = message.as_ref();
+
   let (prefix, default_color) = match log_type {
     "error" => (ansi::PREFIX_BROWSER_ERROR, ansi::RED),
     "warn" => (ansi::PREFIX_BROWSER_WARN, ansi::YELLOW),
@@ -201,7 +207,9 @@ pub fn format_browser_log(
 
   if let Some(c) = caller {
     if !c.is_empty() {
-      write!(buf, " {}({c}){}", ansi::DIM, ansi::RESET).ok()?;
+      // Untrusted: caller strings arrive from the browser.
+      let c = sanitize::sanitize(c);
+      write!(buf, " {}({}){}", ansi::DIM, c, ansi::RESET).ok()?;
     }
   }
 

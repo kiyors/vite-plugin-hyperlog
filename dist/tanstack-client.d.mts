@@ -1,5 +1,5 @@
 //#region src/tanstack-client.d.ts
-interface TanStackRouteMatch {
+export interface TanStackRouteMatch {
   routeId?: string;
   id?: string;
   params?: Record<string, string | number | boolean>;
@@ -7,17 +7,17 @@ interface TanStackRouteMatch {
     id?: string;
   };
 }
-interface TanStackLocation {
+export interface TanStackLocation {
   pathname?: string;
   href?: string;
   params?: Record<string, string | number | boolean>;
 }
-interface TanStackResolvedState {
+export interface TanStackResolvedState {
   toLocation?: TanStackLocation;
   fromLocation?: TanStackLocation;
   matches?: TanStackRouteMatch[];
 }
-interface TanStackRouterLike {
+export interface TanStackRouterLike {
   state?: {
     matches?: TanStackRouteMatch[];
     location?: TanStackLocation;
@@ -43,6 +43,5 @@ declare global {
  * registerTanStackRouterLogger(router);
  * ```
  */
-declare function registerTanStackRouterLogger(router: TanStackRouterLike): void;
+export declare function registerTanStackRouterLogger(router: TanStackRouterLike): void;
 //#endregion
-export { TanStackLocation, TanStackResolvedState, TanStackRouteMatch, TanStackRouterLike, registerTanStackRouterLogger };

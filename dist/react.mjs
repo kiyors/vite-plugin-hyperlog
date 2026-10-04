@@ -1,4 +1,4 @@
-import { browserLogger, createFrameworkLogger } from "./plugin.mjs";
+import { i as createFrameworkLogger, n as browserLogger } from "./plugin-shared.mjs";
 //#region src/react.ts
 const { requestLogger, logger } = createFrameworkLogger("/@react-refresh");
 //#endregion

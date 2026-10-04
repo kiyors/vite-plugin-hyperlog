@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use crate::ansi;
+use crate::sanitize;
 use crate::server_fn;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -86,10 +87,19 @@ pub fn format_log_entry(
   route_name: Option<&str>,
   repeat_count: Option<u32>,
 ) -> Option<String> {
-  let (path, query) = match original_url.split_once('?') {
+  // Untrusted: the URL comes straight from the request line, so any page the dev
+  // server serves can smuggle terminal control sequences into the log via
+  // `fetch("/\x1b[2J")`. Sanitize once here so every branch below is safe.
+  let sanitized_url = sanitize::sanitize(original_url);
+  let sanitized_url = sanitized_url.as_ref();
+
+  let (path, query) = match sanitized_url.split_once('?') {
     Some((p, q)) => (p, Some(q)),
-    None => (original_url, None),
+    None => (sanitized_url, None),
   };
+
+  let redirect_location = redirect_location.map(sanitize::sanitize);
+  let route_name = route_name.map(sanitize::sanitize);
 
   let category = classify_path(path);
 
@@ -122,6 +132,9 @@ pub fn format_log_entry(
   match category {
     RequestCategory::ServerFn => {
       if let Some((func_name, file_name)) = server_fn::decode_server_fn(path) {
+        // Decoded from a base64 segment of the URL, so also untrusted.
+        let func_name = sanitize::sanitize(&func_name);
+        let file_name = sanitize::sanitize(&file_name);
         write!(
           buf,
           "{}{func_name}{} {}({file_name}){}",
@@ -222,6 +235,91 @@ mod tests {
     );
     assert_eq!(classify_path("/dashboard"), RequestCategory::Route);
     assert_eq!(classify_path("/"), RequestCategory::Route);
+  }
+
+  #[test]
+  fn test_format_log_entry_strips_escapes_from_url() {
+    // The URL comes from the request line, so a served page can inject escapes.
+    let res = format_log_entry(
+      "/\x1b[2J\x1b[HFAKE",
+      "GET",
+      200,
+      1.0,
+      None,
+      None,
+      None,
+      None,
+    );
+    let log = res.unwrap();
+    assert!(!log.contains("\x1b[2J"));
+    assert!(!log.contains("\x1b[H"));
+    assert!(log.contains("FAKE"));
+  }
+
+  #[test]
+  fn test_format_log_entry_strips_escapes_from_route_name() {
+    let res = format_log_entry(
+      "/dash",
+      "GET",
+      200,
+      1.0,
+      None,
+      None,
+      Some("\x1b[31mFAKE\x1b[0m"),
+      None,
+    );
+    let log = res.unwrap();
+    assert!(!log.contains("\x1b[31m"));
+    assert!(log.contains("FAKE"));
+  }
+
+  #[test]
+  fn test_format_log_entry_strips_escapes_from_redirect_location() {
+    let res = format_log_entry(
+      "/old",
+      "GET",
+      302,
+      1.0,
+      None,
+      Some("/\x1b[2Jnew"),
+      None,
+      None,
+    );
+    let log = res.unwrap();
+    assert!(!log.contains("\x1b[2J"));
+  }
+
+  #[test]
+  fn test_format_log_entry_strips_carriage_return_from_url() {
+    let res = format_log_entry(
+      "/legit\r[browser error] forged",
+      "GET",
+      200,
+      1.0,
+      None,
+      None,
+      None,
+      None,
+    );
+    let log = res.unwrap();
+    assert!(!log.contains('\r'));
+  }
+
+  #[test]
+  fn test_format_log_entry_preserves_normal_urls() {
+    let res = format_log_entry(
+      "/dashboard/settings?tab=general",
+      "GET",
+      200,
+      1.0,
+      None,
+      None,
+      Some("/dashboard/settings"),
+      None,
+    );
+    let log = res.unwrap();
+    assert!(log.contains("/dashboard/settings"));
+    assert!(log.contains("tab=general"));
   }
 
   #[test]

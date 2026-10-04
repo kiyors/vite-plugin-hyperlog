@@ -1,4 +1,4 @@
-import { browserLogger, createFrameworkLogger } from "./plugin.mjs";
+import { i as createFrameworkLogger, n as browserLogger } from "./plugin-shared.mjs";
 //#region src/solid.ts
 const { requestLogger, logger } = createFrameworkLogger("/@solid-refresh");
 //#endregion

@@ -1,5 +1,5 @@
-import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-shared.mjs";
+import { a as browserLogger, n as RequestLoggerConfig } from "./plugin-shared.mjs";
 //#region src/react.d.ts
-declare const requestLogger: (config?: RequestLoggerConfig) => Plugin, logger: (config?: RequestLoggerConfig) => Plugin[];
+export declare const requestLogger: (config?: RequestLoggerConfig) => import("vite", { with: { "resolution-mode": "import" } }).Plugin, logger: (config?: RequestLoggerConfig) => import("vite", { with: { "resolution-mode": "import" } }).Plugin[];
 //#endregion
-export { type RequestLoggerConfig, browserLogger, logger as default, logger, requestLogger };
+export { type RequestLoggerConfig, browserLogger, logger as default };

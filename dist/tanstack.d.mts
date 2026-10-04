@@ -1,7 +1,7 @@
-import { n as RequestLoggerConfig, r as browserLogger } from "./plugin-shared.mjs";
+import { a as browserLogger, n as RequestLoggerConfig } from "./plugin-shared.mjs";
 import { Plugin } from "vite";
 //#region src/tanstack.d.ts
-interface TanStackLoggerConfig extends RequestLoggerConfig {
+export interface TanStackLoggerConfig extends RequestLoggerConfig {
   /**
    * Filter out internal Vite module compilation noise (/src/***.tsx, /node_modules/, ?tsr-split, etc.)
    * @default true
@@ -33,15 +33,15 @@ interface TanStackLoggerConfig extends RequestLoggerConfig {
    */
   routeTreePath?: string;
 }
-interface RouteMatcher {
+export interface RouteMatcher {
   pattern: string;
   regex: RegExp;
 }
-declare function parseRouteTreeContent(content: string): RouteMatcher[];
-declare function requestLogger(config?: TanStackLoggerConfig): Plugin;
+export declare function parseRouteTreeContent(content: string): RouteMatcher[];
+export declare function requestLogger(config?: TanStackLoggerConfig): Plugin;
 /**
  * Convenient unified TanStack logger plugin that registers both requestLogger and browserLogger.
  */
-declare function tanstackLogger(config?: TanStackLoggerConfig): Plugin[];
+export declare function tanstackLogger(config?: TanStackLoggerConfig): Plugin[];
 //#endregion
-export { RouteMatcher, TanStackLoggerConfig, browserLogger, tanstackLogger as default, tanstackLogger, parseRouteTreeContent, requestLogger };
+export { browserLogger, tanstackLogger as default };

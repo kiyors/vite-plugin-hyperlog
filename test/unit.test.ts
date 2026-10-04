@@ -8,6 +8,8 @@ import {
   remapSourcePosition,
   remapStackTrace,
 } from "../index.js";
+import { GraphReevaluationDetector } from "../src/graph";
+import { browserLoggerScriptSrc, isModuleRequest, matchesExclusion } from "../src/plugin";
 import { parseRouteTreeContent } from "../src/tanstack";
 import { registerTanStackRouterLogger } from "../src/tanstack-client";
 
@@ -368,5 +370,266 @@ describe("Client registerTanStackRouterLogger", () => {
       // SAFETY: Restoring original window after test teardown
       (globalThis as any).window = originalWindow;
     }
+  });
+});
+
+describe("Terminal escape sanitization", () => {
+  it("strips escape sequences from browser log messages", () => {
+    const log = formatBrowserLog("error", "\x1b[2J\x1b[HFAKE [browser error] boom", "src/x.ts:1");
+    expect(log).not.toBeNull();
+    expect(log).not.toContain("\x1b[2J");
+    expect(log).not.toContain("\x1b[H");
+    expect(log).toContain("FAKE [browser error]");
+  });
+
+  it("strips carriage returns so a message cannot forge a second log line", () => {
+    const log = formatBrowserLog("info", "legit message\r[browser error] fabricated");
+    expect(log).not.toContain("\r");
+    expect(log).not.toContain("\n");
+  });
+
+  it("strips escapes from the caller annotation", () => {
+    const log = formatBrowserLog("info", "hello", "src/\x1b[31mred\x1b[0m.ts:1");
+    expect(log).not.toContain("\x1b[31m");
+    expect(log).toContain("src/");
+  });
+
+  it("strips escapes from an untrusted route id posted by a page", () => {
+    const log = formatRouteLog("\x1b[31mFAKE-ROUTE\x1b[0m", "/x", null, 1.0, false);
+    expect(log).not.toContain("\x1b[31m");
+    expect(log).toContain("FAKE-ROUTE");
+  });
+
+  it("strips escapes from a route path and params", () => {
+    // The formatter's own colors legitimately contain ESC, so assert on the
+    // untrusted payloads specifically rather than on ESC in general.
+    const log = formatRouteLog("/id", "/x\x1b[2J", "\x1b[31mred\x1b[0m", 1.0, false);
+    expect(log).not.toContain("\x1b[2J");
+    expect(log).not.toContain("\x1b[31m");
+    expect(log).toContain("/x [2J");
+  });
+
+  it("preserves legitimate newlines and tabs in messages", () => {
+    const log = formatBrowserLog("info", "line one\nline two\ttabbed");
+    expect(log).toContain("line one\nline two\ttabbed");
+  });
+
+  it("preserves multibyte characters in messages", () => {
+    const log = formatBrowserLog("info", "café 日本語");
+    expect(log).toContain("café 日本語");
+  });
+
+  it("still applies its own colors after sanitizing", () => {
+    const log = formatBrowserLog("error", "plain message");
+    expect(log).toContain("[browser error]");
+    expect(log).toContain("\x1b[31m");
+  });
+});
+
+describe("matchesExclusion segment boundaries", () => {
+  it("matches a path pattern on a segment boundary", () => {
+    expect(matchesExclusion("/api/v1/users", "/api")).toBe(true);
+    expect(matchesExclusion("/api", "/api")).toBe(true);
+  });
+
+  it("does not match a path pattern that is only a prefix of a segment", () => {
+    // These were all silently dropped by the old substring match.
+    expect(matchesExclusion("/api-key", "/api")).toBe(false);
+    expect(matchesExclusion("/dashboard/apiSettings", "/api")).toBe(false);
+    expect(matchesExclusion("/apiary", "/api")).toBe(false);
+    expect(matchesExclusion("/settings/node_modules-check", "/node_modules/")).toBe(false);
+  });
+
+  it("still excludes real dependency paths", () => {
+    expect(matchesExclusion("/node_modules/.vite/deps/react.js", "/node_modules/")).toBe(true);
+    expect(matchesExclusion("/@id/virtual:browser-logger", "/@id/")).toBe(true);
+    expect(matchesExclusion("/@vite/client", "/@vite")).toBe(true);
+  });
+
+  it("keeps substring matching for query-shaped and bare patterns", () => {
+    expect(matchesExclusion("/src/App.tsx?import", "?import")).toBe(true);
+    expect(matchesExclusion("/src/main.tsx?t=123", "?import")).toBe(false);
+    expect(matchesExclusion("/some/vite_ping", "vite_ping")).toBe(true);
+  });
+
+  it("ignores the query string when matching a path pattern", () => {
+    expect(matchesExclusion("/api?page=2", "/api")).toBe(true);
+    expect(matchesExclusion("/apiary?page=2", "/api")).toBe(false);
+  });
+});
+
+describe("isModuleRequest", () => {
+  it("classifies app source modules as module noise", () => {
+    expect(isModuleRequest("/src/main.tsx")).toBe(true);
+    expect(isModuleRequest("/src/App.tsx")).toBe(true);
+    expect(isModuleRequest("/src/globals.css")).toBe(true);
+    expect(isModuleRequest("/src/components/ui/button.tsx")).toBe(true);
+  });
+
+  it("classifies dependency and vite-internal modules as module noise", () => {
+    expect(isModuleRequest("/node_modules/.vite/deps/react.js")).toBe(true);
+    expect(isModuleRequest("/@react-refresh")).toBe(true);
+    expect(isModuleRequest("/@fs/Users/x/src/y.ts")).toBe(true);
+  });
+
+  it("does not classify app routes or apis as modules", () => {
+    expect(isModuleRequest("/")).toBe(false);
+    expect(isModuleRequest("/dashboard")).toBe(false);
+    expect(isModuleRequest("/login")).toBe(false);
+    expect(isModuleRequest("/api/v1/users")).toBe(false);
+    expect(isModuleRequest("/_serverFn/abc")).toBe(false);
+  });
+
+  it("does not treat an api path that ends in a script extension as a module", () => {
+    expect(isModuleRequest("/api/config.js")).toBe(false);
+  });
+});
+
+describe("GraphReevaluationDetector", () => {
+  // Ten modules, so a single re-walk clears the eight-repeat threshold.
+  const modules = [
+    "/src/main.tsx",
+    "/src/App.tsx",
+    "/src/index.css",
+    "/src/App.css",
+    "/src/lib/utils.ts",
+    "/src/lib/api.ts",
+    "/src/lib/hooks/use-auth.ts",
+    "/src/components/button.tsx",
+    "/src/components/nav.tsx",
+    "/src/components/layout.tsx",
+  ];
+
+  function feed(urls: string[], detector: GraphReevaluationDetector) {
+    let report = null;
+    for (const url of urls) {
+      report = detector.observe(isModuleRequest(url), url) ?? report;
+    }
+    return report;
+  }
+
+  it("does not report a re-walk when one module is fetched many times", () => {
+    // Regression: this shape previously reported "1 modules requested again",
+    // which is repeat polling, not a graph re-evaluation.
+    const detector = new GraphReevaluationDetector(() => 0);
+    const report = feed(
+      Array.from({ length: 20 }, () => "/src/main.tsx"),
+      detector,
+    );
+    expect(report).toBeNull();
+  });
+
+  it("does not report a re-walk when only a few distinct modules repeat", () => {
+    const detector = new GraphReevaluationDetector(() => 0);
+    const report = feed(
+      ["/src/main.tsx", "/src/App.tsx", "/src/index.css"].flatMap((u) => Array.from({ length: 5 }, () => u)),
+      detector,
+    );
+    expect(report).toBeNull();
+  });
+
+  it("reports a re-walk when many distinct modules are requested twice", () => {
+    const detector = new GraphReevaluationDetector(() => 0);
+    const report = feed([...modules, ...modules], detector);
+    expect(report).not.toBeNull();
+    expect(report?.distinctModules).toBe(modules.length);
+    // Reports the moment the threshold is crossed, not after the full sweep.
+    expect(report?.repeatedRequests).toBe(8);
+  });
+
+  it("reports at most once per page load", () => {
+    const detector = new GraphReevaluationDetector(() => 0);
+    const first = feed([...modules, ...modules], detector);
+    expect(first).not.toBeNull();
+
+    let second = null;
+    for (const url of [...modules, ...modules, ...modules]) {
+      second = detector.observe(isModuleRequest(url), url) ?? second;
+    }
+    expect(second).toBeNull();
+  });
+
+  it("resets on a document request so a later page load is judged on its own", () => {
+    const detector = new GraphReevaluationDetector(() => 0);
+    feed([...modules, ...modules], detector);
+
+    // New page load: repeat the same modules and it should report again.
+    detector.observe(isModuleRequest("/"), "/");
+    let report = null;
+    for (const url of [...modules, ...modules]) {
+      report = detector.observe(isModuleRequest(url), url) ?? report;
+    }
+    expect(report).not.toBeNull();
+  });
+
+  it("reports the elapsed window since the page load began", () => {
+    let clock = 1000;
+    const detector = new GraphReevaluationDetector(() => clock);
+    detector.observe(false, "/");
+    clock = 2500;
+    const report = feed([...modules, ...modules], detector);
+    expect(report?.windowMs).toBe(1500);
+  });
+
+  it("stays quiet during an ordinary single module graph walk", () => {
+    const detector = new GraphReevaluationDetector(() => 0);
+    const report = feed(modules, detector);
+    expect(report).toBeNull();
+  });
+});
+
+describe("browserLoggerScriptSrc", () => {
+  it("serves from the root by default", () => {
+    expect(browserLoggerScriptSrc("/")).toBe("/@id/__x00__virtual:browser-logger");
+  });
+
+  it("honours a sub-path base", () => {
+    expect(browserLoggerScriptSrc("/app/")).toBe("/app/@id/__x00__virtual:browser-logger");
+    expect(browserLoggerScriptSrc("/deep/nested/")).toBe("/deep/nested/@id/__x00__virtual:browser-logger");
+  });
+
+  it("tolerates a base without a trailing slash", () => {
+    expect(browserLoggerScriptSrc("/app")).toBe("/app/@id/__x00__virtual:browser-logger");
+  });
+});
+
+describe("terminal escape sanitization on the request log path", () => {
+  it("strips escapes from a URL supplied by the request line", () => {
+    // Any served page can reach this with fetch("/\x1b[2J").
+    const log = formatLogEntry("/\x1b[2J\x1b[HFAKE", "GET", 200, 1.0, null, null, null, null);
+    expect(log).not.toBeNull();
+    expect(log).not.toContain("\x1b[2J");
+    expect(log).not.toContain("\x1b[H");
+    expect(log).toContain("FAKE");
+  });
+
+  it("strips escapes from a route name supplied by resolveRoute", () => {
+    const log = formatLogEntry("/dash", "GET", 200, 1.0, null, null, "\x1b[31mFAKE\x1b[0m", null);
+    expect(log).not.toContain("\x1b[31m");
+  });
+
+  it("strips escapes from a redirect Location header", () => {
+    const log = formatLogEntry("/old", "GET", 302, 1.0, null, "/\x1b[2Jnew", null, null);
+    expect(log).not.toContain("\x1b[2J");
+  });
+
+  it("strips carriage returns so a URL cannot forge a log line", () => {
+    const log = formatLogEntry("/legit\r[browser error] forged", "GET", 200, 1.0, null, null, null, null);
+    expect(log).not.toContain("\r");
+  });
+
+  it("still logs ordinary URLs, query strings and route names intact", () => {
+    const log = formatLogEntry(
+      "/dashboard/settings?tab=general",
+      "GET",
+      200,
+      1.0,
+      null,
+      null,
+      "/dashboard/settings",
+      null,
+    );
+    expect(log).toContain("/dashboard/settings");
+    expect(log).toContain("tab=general");
   });
 });

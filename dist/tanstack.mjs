@@ -1,12 +1,12 @@
-import { browserLogger, t as require_vite_plugin_logger } from "./plugin.mjs";
+import { d as require_vite_plugin_hyperlog, l as matchesExclusion, n as browserLogger, t as attachRouteEndpoint } from "./plugin-shared.mjs";
 import fs from "node:fs";
 import path from "node:path";
 //#region src/tanstack.ts
-var import_vite_plugin_logger = require_vite_plugin_logger();
+var import_vite_plugin_hyperlog = require_vite_plugin_hyperlog();
 function parseRouteTreeContent(content) {
 	const routes = /* @__PURE__ */ new Set();
 	try {
-		const astRoutes = (0, import_vite_plugin_logger.parseRouteTreeAst)(content);
+		const astRoutes = (0, import_vite_plugin_hyperlog.parseRouteTreeAst)(content);
 		for (const r of astRoutes) routes.add(r);
 	} catch {}
 	if (routes.size === 0) {
@@ -94,7 +94,7 @@ function requestLogger(config) {
 		if (!entry) return;
 		pendingServerFns.delete(key);
 		const avgDuration = entry.totalDuration / entry.count;
-		const logString = (0, import_vite_plugin_logger.formatLogEntry)(entry.url, entry.method, entry.status, avgDuration, entry.contentLength, entry.redirectLocation, entry.routeName, entry.count > 1 ? entry.count : null);
+		const logString = (0, import_vite_plugin_hyperlog.formatLogEntry)(entry.url, entry.method, entry.status, avgDuration, entry.contentLength, entry.redirectLocation, entry.routeName, entry.count > 1 ? entry.count : null);
 		if (logString) console.log(logString);
 	};
 	const resolveRouteName = (url) => {
@@ -143,30 +143,16 @@ function requestLogger(config) {
 			});
 			const handleTanStackRoute = (data) => {
 				const { routeId, path, params, durationMs, isPreload } = data;
-				const logString = (0, import_vite_plugin_logger.formatRouteLog)(routeId || path, path, params ?? null, durationMs ? Number(durationMs) : null, Boolean(isPreload));
+				const logString = (0, import_vite_plugin_hyperlog.formatRouteLog)(routeId || path, path, params ?? null, durationMs ? Number(durationMs) : null, Boolean(isPreload));
 				if (logString) console.log(logString);
 			};
 			server.ws.on("vite-plugin-hyperlog:tanstack-route", handleTanStackRoute);
+			attachRouteEndpoint(server, handleTanStackRoute);
 			server.middlewares.use((req, res, next) => {
-				if (req.url === "/__hyperlog/route" && req.method === "POST") {
-					let body = "";
-					req.on("data", (chunk) => {
-						body += chunk;
-					});
-					req.on("end", () => {
-						try {
-							const data = JSON.parse(body);
-							handleTanStackRoute(data);
-						} catch {}
-						res.statusCode = 204;
-						res.end();
-					});
-					return;
-				}
 				const url = req.originalUrl || "";
 				const method = req.method || "GET";
 				if (excludedMethods && excludedMethods.has(method.toUpperCase())) return next();
-				for (let i = 0; i < exclusions.length; i++) if (url.includes(exclusions[i])) return next();
+				for (let i = 0; i < exclusions.length; i++) if (matchesExclusion(url, exclusions[i])) return next();
 				if (excludeModules) {
 					for (let i = 0; i < TANSTACK_EXCLUDE_PATTERNS.length; i++) if (url.includes(TANSTACK_EXCLUDE_PATTERNS[i])) return next();
 					if (isSourceModule(url)) return next();
@@ -218,7 +204,7 @@ function requestLogger(config) {
 						pendingServerFns.set(key, entry);
 						return;
 					}
-					const logString = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
+					const logString = (0, import_vite_plugin_hyperlog.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
 					if (logString) console.log(logString);
 				};
 				res.on("finish", logIt);

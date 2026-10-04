@@ -4,7 +4,13 @@ import path from "node:path";
 import type { Plugin } from "vite";
 
 import { formatLogEntry, formatRouteLog, parseRouteTreeAst } from "../index.js";
-import { browserLogger, type RequestLoggerConfig } from "./plugin";
+import {
+  attachRouteEndpoint,
+  browserLogger,
+  matchesExclusion,
+  type RequestLoggerConfig,
+  type RoutePayload,
+} from "./plugin";
 
 export interface TanStackLoggerConfig extends RequestLoggerConfig {
   /**
@@ -288,13 +294,7 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
         }
       });
 
-      const handleTanStackRoute = (data: {
-        routeId?: string;
-        path: string;
-        params?: string | null;
-        durationMs?: number | null;
-        isPreload?: boolean | null;
-      }) => {
+      const handleTanStackRoute = (data: RoutePayload) => {
         const { routeId, path, params, durationMs, isPreload } = data;
         const logString = formatRouteLog(
           routeId || path,
@@ -310,23 +310,9 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
 
       server.ws.on("vite-plugin-hyperlog:tanstack-route", handleTanStackRoute);
 
-      server.middlewares.use((req, res, next) => {
-        if (req.url === "/__hyperlog/route" && req.method === "POST") {
-          let body = "";
-          req.on("data", (chunk) => {
-            body += chunk;
-          });
-          req.on("end", () => {
-            try {
-              const data = JSON.parse(body);
-              handleTanStackRoute(data);
-            } catch {}
-            res.statusCode = 204;
-            res.end();
-          });
-          return;
-        }
+      attachRouteEndpoint(server, handleTanStackRoute);
 
+      server.middlewares.use((req, res, next) => {
         const url = req.originalUrl || "";
         const method = req.method || "GET";
 
@@ -334,8 +320,9 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
           return next();
         }
 
+        // Segment-aware so "/api" does not also swallow "/api-key".
         for (let i = 0; i < exclusions.length; i++) {
-          if (url.includes(exclusions[i])) {
+          if (matchesExclusion(url, exclusions[i])) {
             return next();
           }
         }

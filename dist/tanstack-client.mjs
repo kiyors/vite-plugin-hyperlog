@@ -1,4 +1,31 @@
 //#region src/tanstack-client.ts
+/**
+* Set `localStorage.setItem("vite-plugin-hyperlog:debug", "1")` to surface the
+* errors this module swallows.
+*
+* Swallowing is deliberate: this is telemetry, and a logging failure must never
+* break the host app or a router navigation. But silent catches make genuine
+* bugs invisible, so failures are reported when debugging is explicitly enabled.
+*/
+const DEBUG_KEY = "vite-plugin-hyperlog:debug";
+function isDebugEnabled() {
+	try {
+		return import.meta.env?.DEV === true && globalThis.localStorage?.getItem(DEBUG_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
+/**
+* Reports a swallowed failure when debugging is enabled.
+*
+* Takes a rendered string rather than the thrown value: the value is untrusted
+* and never inspected, and a `catch` binding cannot be annotated with anything
+* narrower than `unknown`, so stringifying at the catch site keeps this honest.
+*/
+function reportSwallowed(where, detail) {
+	if (!isDebugEnabled()) return;
+	console.warn(`[vite-plugin-hyperlog] ${where} failed: ${detail}`);
+}
 function sendRouteEvent(payload) {
 	try {
 		const hot = import.meta.hot || ("window" in globalThis ? globalThis.__HYPERLOG_HOT__ || globalThis.__vite_plugin_react_preamble_installed__ : null);
@@ -6,14 +33,18 @@ function sendRouteEvent(payload) {
 			hot.send("vite-plugin-hyperlog:tanstack-route", payload);
 			return;
 		}
-	} catch {}
+	} catch (err) {
+		reportSwallowed("hot transport", String(err));
+	}
 	try {
 		if ("fetch" in globalThis) fetch("/__hyperlog/route", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(payload)
-		}).catch(() => {});
-	} catch {}
+		}).catch((err) => reportSwallowed("fetch transport", err.message));
+	} catch (err) {
+		reportSwallowed("fetch transport", String(err));
+	}
 }
 /**
 * Client-side subscriber for TanStack Router.
@@ -27,13 +58,16 @@ function sendRouteEvent(payload) {
 * ```
 */
 function registerTanStackRouterLogger(router) {
+	if (!import.meta.env?.DEV) return;
 	if (!("window" in globalThis) || !router || !("subscribe" in router)) return;
 	let navStartTime = 0;
 	try {
 		router.subscribe("onBeforeNavigate", () => {
 			navStartTime = performance.now();
 		});
-	} catch {}
+	} catch (err) {
+		reportSwallowed("subscribe onBeforeNavigate", String(err));
+	}
 	try {
 		router.subscribe("onResolved", (event) => {
 			try {
@@ -55,9 +89,13 @@ function registerTanStackRouterLogger(router) {
 					durationMs,
 					isPreload: false
 				});
-			} catch {}
+			} catch (err) {
+				reportSwallowed("onResolved handler", String(err));
+			}
 		});
-	} catch {}
+	} catch (err) {
+		reportSwallowed("subscribe onResolved", String(err));
+	}
 	try {
 		router.subscribe("onPreloaded", (event) => {
 			try {
@@ -75,9 +113,13 @@ function registerTanStackRouterLogger(router) {
 					durationMs: null,
 					isPreload: true
 				});
-			} catch {}
+			} catch (err) {
+				reportSwallowed("onPreloaded handler", String(err));
+			}
 		});
-	} catch {}
+	} catch (err) {
+		reportSwallowed("subscribe onPreloaded", String(err));
+	}
 }
 //#endregion
 export { registerTanStackRouterLogger };
