@@ -92,7 +92,7 @@
   },
   "lint-staged": {
     "*.@(js|ts|tsx)": [
-      "oxlint --fix",
+      "oxlint --fix --no-error-on-unmatched-pattern",
       "oxfmt --no-error-on-unmatched-pattern"
     ],
     "*.@(yml|yaml|md|json|toml)": [
