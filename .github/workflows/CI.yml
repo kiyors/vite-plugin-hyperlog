@@ -153,18 +153,39 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v7
-      # `architecture` is required here: the runner may be arm64 while the binding
-      # under test is x64 (or vice versa), and pnpm/setup has no architecture input,
-      # so Node must be installed separately to pin the right one.
+      # `architecture` must be pinned explicitly: the runner is arm64 while the
+      # binding under test may be x64 (or vice versa), and the loader picks a
+      # binding from process.arch.
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           architecture: ${{ matrix.settings.architecture }}
+      # `pnpm/setup` cannot install pnpm on Intel macOS: its self-installer pulls
+      # @pnpm/exe, which ships no working darwin-x64 binary because of the upstream
+      # Node.js SEA bug (pnpm/pnpm#11423, nodejs/node#62893). Install through npm
+      # there instead, reading the pinned version from packageManager.
+      - name: Install pnpm
+        if: ${{ runner.os == 'macOS' && matrix.settings.architecture == 'x64' }}
+        run: npm install -g pnpm@$(node -p "require('./package.json').packageManager.replace(/^pnpm@/, '')")
       # `version` is omitted because packageManager already declares pnpm 12.
       - uses: pnpm/setup@v1
+        if: ${{ !(runner.os == 'macOS' && matrix.settings.architecture == 'x64') }}
         with:
           cache: true
           install: false
+      - name: Get pnpm store directory
+        if: ${{ runner.os == 'macOS' && matrix.settings.architecture == 'x64' }}
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent | tr '\\' '/')" >> $GITHUB_ENV
+      - name: Cache pnpm store
+        if: ${{ runner.os == 'macOS' && matrix.settings.architecture == 'x64' }}
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-${{ matrix.settings.architecture }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.settings.architecture }}-pnpm-store-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Download artifacts
