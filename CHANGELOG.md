@@ -3,7 +3,19 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0]
+## [0.2.1]
+
+First published release of the module-filtering and log-hardening work. The
+breaking changes below ship in this version, since 0.2.0 was never published.
+
+### Fixed
+
+- CI `test-binding` job no longer installs a hardcoded `pnpm@11.18.0` that
+  disagreed with the declared `packageManager`.
+
+## [0.2.0] - unpublished
+
+Never published to npm; superseded by 0.2.1, which carries the same changes.
 
 ### Breaking
 

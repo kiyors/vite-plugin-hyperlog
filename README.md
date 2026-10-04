@@ -4,7 +4,7 @@ A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
 
 > **Note**: This plugin supports multiple frameworks via tailored entry points (React, Vue, Svelte, Solid, and TanStack).
 
-> **Upgrading to 0.2.0?** Two defaults changed. See [CHANGELOG.md](CHANGELOG.md)
+> **Upgrading to 0.2.1?** Two defaults changed. See [CHANGELOG.md](CHANGELOG.md)
 > for the migration notes — in short, set `excludeModules: false` if you relied on
 > seeing your own `/src/**` modules logged.
 
