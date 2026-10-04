@@ -10,12 +10,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 libc = { version = "0.2", default-features = false }
-napi-derive = "3.0.0"
+napi-derive = "3.6.10"
 
 [dependencies.napi]
 default-features = false
 features = ["napi10"]
-version = "3.0.0"
+version = "3.14.0"
 
 [build-dependencies]
 napi-build = "2"
