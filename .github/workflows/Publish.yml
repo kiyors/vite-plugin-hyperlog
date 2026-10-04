@@ -112,12 +112,18 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v7
-      # Installs the pinned pnpm and the Node version under test in one step.
+      # `architecture` is required here: the runner may be arm64 while the binding
+      # under test is x64 (or vice versa), and pnpm/setup has no architecture input,
+      # so Node must be installed separately to pin the right one.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          architecture: ${{ matrix.settings.architecture }}
       # `version` is omitted because packageManager already declares pnpm 12.
       - uses: pnpm/setup@v1
         with:
-          runtime: node@${{ matrix.node }}
           cache: true
+          install: false
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Download artifacts
