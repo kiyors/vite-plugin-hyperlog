@@ -110,7 +110,8 @@ cache-busted dynamic `import()` of your entry module. Set
 
 For TanStack applications, import from `vite-plugin-hyperlog/tanstack`. It includes tailored optimizations:
 
-- **Server Function Decoding**: Automatically decodes `/_serverFn` base64 endpoints to display human-readable function names and source files (e.g. `[server-fn] 200 GET getAuthSession (routes/__root.tsx) 18.82ms`), flagging errors with `❌`.
+- **Server Function Decoding & Formatting**: Automatically decodes `/_serverFn` base64 endpoints to display human-readable function names, caller files, and execution durations with hierarchical tree formatting (`└─ ƒ action(args) ➜ result in Xms`), color-coded by latency thresholds and flagging errors with `❌`.
+- **Client DevTools HUD Overlay**: Universal zero-dependency Shadow DOM overlay injected into dev clients via `getServerFnOverlayScript` for real-time latency and error inspection without style collisions.
 - **Duplicate Batching**: Groups and debounces consecutive duplicate server function calls (e.g. `(x5)`) during component mounts and revalidations.
 - **Route Pattern Matching**: Powered by an ultra-fast, native Rust AST parser to extract route patterns and types from `src/routeTree.gen.ts` with 0 regex fragility, displaying parameterized route patterns (e.g. `/$teamId/channels/$channelId`) alongside the requested URL.
 - **Module Noise Filtering**: Automatically filters out internal Vite module compilation noise (`/node_modules/`, `/@vite`, `.tsx`/`.ts` compilation requests, and `?tsr-split=component`).
@@ -215,18 +216,23 @@ By eliminating heavy transitive dependencies (`serde`, `regex`, `chrono`, `yansi
 
 ### Microbenchmarks (Throughput & Latency)
 
-> Tested on **Apple M4 (8 cores, 16 GB Unified Memory)** on macOS with Node.js v23.
+> Tested on **Apple M4 (10 vCPUs, 16 GB Unified Memory)** on macOS with Node.js v24.
 > 5 statistical rounds per benchmark, measuring average, p50, and p99 latencies.
 
-| Function / API               | Workload Description           | Throughput              | Avg Latency | P99 Latency | CPU per Call |
-| :--------------------------- | :----------------------------- | :---------------------- | :---------- | :---------- | :----------- |
-| **`formatRouteLog`**         | Navigations & preloads         | **`1,816,014 ops/sec`** | `0.551 µs`  | `0.568 µs`  | `0.55 µs`    |
-| **`getBrowserLoggerScript`** | Vite client injector script    | **`1,711,222 ops/sec`** | `0.585 µs`  | `0.615 µs`  | `0.58 µs`    |
-| **`formatBrowserLog`**       | 6-type mixed browser telemetry | **`1,405,299 ops/sec`** | `0.712 µs`  | `0.729 µs`  | `0.71 µs`    |
-| **`formatLogEntry`**         | 6-path mixed HTTP requests     | **`1,336,623 ops/sec`** | `0.749 µs`  | `0.803 µs`  | `0.75 µs`    |
-| **`remapSourcePosition`**    | VLQ sourcemap token lookup     | **`971,643 ops/sec`**   | `1.030 µs`  | `1.061 µs`  | `1.03 µs`    |
-| **`remapStackTrace`**        | 5-frame stack trace remapping  | **`601,853 ops/sec`**   | `1.663 µs`  | `1.733 µs`  | `1.65 µs`    |
-| **`parseRouteTreeAst`**      | TanStack 15-route tree parsing | **`335,410 trees/sec`** | `2.982 µs`  | `3.050 µs`  | `2.98 µs`    |
+| Function / API                 | Workload Description                   | Throughput              | Avg Latency | P99 Latency | CPU per Call |
+| :----------------------------- | :------------------------------------- | :---------------------- | :---------- | :---------- | :----------- |
+| **`shouldExcludeRequest`**     | Vite module & static asset filtering   | **`2,480,223 ops/sec`** | `0.403 µs`  | `0.410 µs`  | `0.40 µs`    |
+| **`getBrowserLoggerScript`**   | Vite client injector script            | **`2,414,486 ops/sec`** | `0.412 µs`  | `0.415 µs`  | `0.41 µs`    |
+| **`formatRouteLog`**           | Navigations & preloads (4-variant)     | **`1,682,684 ops/sec`** | `0.594 µs`  | `0.596 µs`  | `0.59 µs`    |
+| **`decodeServerFn`**           | URL-safe Base64 + stack JSON extractor | **`1,543,643 ops/sec`** | `0.648 µs`  | `0.658 µs`  | `0.65 µs`    |
+| **`formatLogEntry`**           | 6-path mixed HTTP requests             | **`1,212,282 ops/sec`** | `0.825 µs`  | `0.827 µs`  | `0.82 µs`    |
+| **`formatBrowserLog`**         | 6-type mixed browser telemetry         | **`1,111,462 ops/sec`** | `0.900 µs`  | `0.902 µs`  | `0.90 µs`    |
+| **`remapSourcePosition`**      | Zero-copy VLQ sourcemap token lookup   | **`1,075,881 ops/sec`** | `0.929 µs`  | `0.930 µs`  | `0.93 µs`    |
+| **`matchRoutePath`**           | Native dynamic parameter matcher       | **`1,019,244 ops/sec`** | `0.981 µs`  | `0.988 µs`  | `0.98 µs`    |
+| **`formatServerFnLog`**        | Hierarchical tree & standalone logs    | **`892,517 ops/sec`**   | `1.120 µs`  | `1.131 µs`  | `1.12 µs`    |
+| **`remapStackTrace`**          | 5-frame minified stack remapping       | **`634,381 ops/sec`**   | `1.577 µs`  | `1.594 µs`  | `1.58 µs`    |
+| **`parseRouteTreeAst`**        | TanStack 15-route tree AST parsing     | **`274,749 trees/sec`** | `3.640 µs`  | `3.641 µs`  | `3.64 µs`    |
+| **`getServerFnOverlayScript`** | Client Shadow DOM DevTools HUD script  | **`201,782 ops/sec`**   | `4.956 µs`  | `4.961 µs`  | `4.96 µs`    |
 
 ---
 
@@ -245,9 +251,9 @@ Request Distribution:
   └── Static Assets / Fonts (3%)       [■·················]   15,000 assets
 ```
 
-- **Effective Throughput**: **`1,486,750 requests / sec`**
-- **Average Latency**: **`0.673 µs`** per logged event
-- **Total Time**: `336.3 ms` for all 500,000 requests
+- **Effective Throughput**: **`1,404,999 requests / sec`**
+- **Average Latency**: **`0.712 µs`** per logged event
+- **Total Time**: `355.8 ms` for all 500,000 requests
 - **Memory RSS Growth**: `< 1.8 MB` during burst
 
 ---
@@ -256,10 +262,13 @@ Request Distribution:
 
 | Real-World Scenario                     | Workload Scale                             | Throughput                | Latency    |
 | :-------------------------------------- | :----------------------------------------- | :------------------------ | :--------- |
-| **Enterprise 60+ Route Tree AST**       | 60+ routes, nested layouts, search schemas | **`37,639 trees/sec`**    | `26.56 µs` |
-| **Production 14-Frame Stack Remapping** | Vite + React + TanStack minified bundle    | **`176,970 stacks/sec`**  | `5.65 µs`  |
-| **High-Concurrency Interleaved Burst**  | 100 concurrent clients × 200 requests      | **`1,387,223 ops/sec`**   | `0.72 µs`  |
-| **Heavy JSON Syntax Colorizer**         | 5.7 KB nested object/array payloads        | **`47,692 payloads/sec`** | `20.96 µs` |
+| **Enterprise 60+ Route Tree AST**       | 60+ routes, nested layouts, search schemas | **`33,045 trees/sec`**    | `30.26 µs` |
+| **Production 14-Frame Stack Remapping** | Vite + React + TanStack minified bundle    | **`183,116 stacks/sec`**  | `5.46 µs`  |
+| **High-Concurrency Interleaved Burst**  | 100 concurrent clients × 200 requests      | **`1,326,382 ops/sec`**   | `0.75 µs`  |
+| **Heavy JSON Syntax Colorizer**         | 5.7 KB nested object/array payloads        | **`32,592 payloads/sec`** | `30.68 µs` |
+| **Adversarial 100KB Message Payload**   | 100 KB giant JSON strings                  | **`4,796 payloads/sec`**  | `208.5 µs` |
+| **Ultra-Deep 100-Frame Stack Trace**    | 100-frame recursion stack traces           | **`47,497 stacks/sec`**   | `21.05 µs` |
+| **Rapid-Fire Cached Time Formatting**   | 2,000,000 cached millisecond timestamps    | **`2,119,664 ops/sec`**   | `0.47 µs`  |
 
 ---
 
@@ -268,17 +277,17 @@ Request Distribution:
 ```text
 ┌─ Hardware Resource Consumption Matrix ───────────────────────────────────┐
   CPU Metrics:
-    User execution time:     11,011.9 ms
-    System kernel time:      120.5 ms
-    Total CPU consumed:      11,132.3 ms
+    User execution time:     29,818.5 ms
+    System kernel time:      57.3 ms
+    Total CPU consumed:      29,875.9 ms
     Execution model:         Single-core thread-safe NAPI fast-path
 
   RAM / Memory Metrics:
-    Resident Set Size (RSS): 67.92 MB
-    V8 Heap Used / Total:    4.77 MB / 9.89 MB
+    Resident Set Size (RSS): 68.94 MB
+    V8 Heap Used / Total:    5.00 MB / 9.91 MB
     Native External Memory:  2.18 MB
-    ArrayBuffers Allocated:  134.3 KB
-    Net Heap Growth:         -4.3 KB across 2,000,000 sustained operations
+    ArrayBuffers Allocated:  137.5 KB
+    Net Heap Growth:         -117.7 KB across 2,000,000 sustained operations
 
   GPU Metrics:
     Device Model:            Apple M4 (8 cores) · Metal 4
@@ -286,30 +295,46 @@ Request Distribution:
     VRAM Memory Allocated:   0 B (Zero graphics memory residency)
 
   Suite Throughput Metrics:
-    Total Benchmark Calls:   8,600,000 requests executed
-    Suite Execution Time:    11.29s
-    Correctness Status:      ✓ 61/61 Passed (100% verified)
+    Total Benchmark Calls:   22,305,000 requests executed
+    Suite Execution Time:    29.92s
+    Correctness Status:      ✓ 78/78 Passed (100% verified)
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Zero Memory Leaks**: Across 2,000,000 sustained calls with forced V8 garbage collection before and after, net heap growth is **`-4.3 KB`** (100% leak-free).
+- **Zero Memory Leaks**: Across 2,000,000 sustained calls with forced V8 garbage collection before and after, net heap growth is **`-117.7 KB`** (100% leak-free).
 - **Zero GPU Overhead**: Does not invoke GPU shaders, Metal/DirectX/Vulkan contexts, or allocate graphics memory buffers (**0.0% GPU cycles, 0 B VRAM**).
 - **Adversarial Resilience**: 100% immune to 18 fuzz vectors (directory traversal, 100KB payloads, corrupt VLQ mappings, unclosed JSON) with zero panics or unhandled exceptions.
 
 ---
 
-### Running the Benchmark Suite
+### Benchmark Suite & Profiler Tooling
 
-To run the full suite with exact V8 garbage collection telemetry:
+The native benchmark suite includes an interactive CLI, multi-format exports, and automated regression guards:
 
 ```bash
+# Run full suite with GC memory leak analysis & hardware telemetry
 pnpm bench
-```
 
-To run a quick microbenchmark without GC profiling:
-
-```bash
+# Quick sub-second pass (~1.5s, 2 rounds, scaled iterations)
 pnpm bench:quick
+
+# Print only the 3-table Master Performance Dashboard
+pnpm bench:summary
+
+# Run automated CI regression guard (fails code 1 if throughput drops > 15%)
+pnpm bench:ci
+
+# Export GitHub Flavored Markdown report (or save with -o report.md)
+pnpm bench:markdown
+
+# Export structured JSON telemetry (or save with -o report.json)
+pnpm bench:json
+
+# Filter specific benchmarks by regex pattern
+pnpm bench -f "serverFn"
+
+# Re-benchmark and save current metrics as the reference baseline
+pnpm bench:update
 ```
 
 ---

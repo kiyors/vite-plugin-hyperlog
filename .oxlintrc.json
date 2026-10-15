@@ -40,7 +40,8 @@
     ".roo/**",
     ".windsurf/**",
     "tools/oxlint/anti-slop/**",
-    "playground/**"
+    "playground/**",
+    "next.js/**"
   ],
   "jsPlugins": [{ "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }]
 }

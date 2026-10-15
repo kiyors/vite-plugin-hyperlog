@@ -4,12 +4,14 @@ import {
   formatBrowserLog,
   formatLogEntry,
   formatRouteLog,
+  formatServerFnLog,
   parseRouteTreeAst,
   remapSourcePosition,
   remapStackTrace,
 } from "../index.js";
 import { GraphReevaluationDetector } from "../src/graph";
 import { browserLoggerScriptSrc, isModuleRequest, matchesExclusion } from "../src/plugin";
+import { detectServerFunction, formatPayload, parseServerFnArgs, parseServerFnResult } from "../src/server-fn-utils";
 import { parseRouteTreeContent } from "../src/tanstack";
 import { registerTanStackRouterLogger } from "../src/tanstack-client";
 
@@ -631,5 +633,154 @@ describe("terminal escape sanitization on the request log path", () => {
     );
     expect(log).toContain("/dashboard/settings");
     expect(log).toContain("tab=general");
+  });
+});
+
+describe("Server Function Native Formatter (formatServerFnLog)", () => {
+  it("formats server function in tree child format with args and result", () => {
+    const log = formatServerFnLog(
+      "updateProfile",
+      "src/actions/user.ts",
+      15,
+      200,
+      12.45,
+      `{ id: 42, role: "admin" }`,
+      `{ ok: true }`,
+      true,
+      null,
+    );
+    expect(log).not.toBeNull();
+    expect(log).toContain("└─");
+    expect(log).toContain("ƒ updateProfile");
+    expect(log).toContain(`({ id: 42, role: "admin" })`);
+    expect(log).toContain(`➜ { ok: true }`);
+    expect(log).toContain("12.45ms");
+    expect(log).toContain("(src/actions/user.ts:15)");
+  });
+
+  it("formats server function error with red badge and failure text", () => {
+    const log = formatServerFnLog(
+      "deleteItem",
+      "src/actions/items.ts",
+      null,
+      500,
+      4.12,
+      "99",
+      "Database connection timed out",
+      true,
+      null,
+    );
+    expect(log).not.toBeNull();
+    expect(log).toContain("└─");
+    expect(log).toContain("ƒ deleteItem");
+    expect(log).toContain("(99)");
+    expect(log).toContain("❌ Database connection timed out");
+  });
+
+  it("formats standalone server function log line with timestamp and [server-fn] badge", () => {
+    const log = formatServerFnLog("fetchPosts", "routes/posts.tsx", null, 200, 8.0, null, null, false, 2);
+    expect(log).not.toBeNull();
+    expect(log).toContain("[server-fn]");
+    expect(log).toContain("POST");
+    expect(log).toContain("ƒ fetchPosts");
+    expect(log).toContain("()");
+    expect(log).toContain("(x2)");
+    expect(log).toContain("(routes/posts.tsx)");
+  });
+});
+
+describe("Server Function Payload Formatting (formatPayload)", () => {
+  it("formats primitive values", () => {
+    expect(formatPayload(42)).toBe("42");
+    expect(formatPayload(true)).toBe("true");
+    expect(formatPayload(null)).toBe("null");
+    expect(formatPayload(undefined)).toBe("undefined");
+    expect(formatPayload(100n)).toBe("100n");
+    expect(formatPayload("short")).toBe(`"short"`);
+  });
+
+  it("truncates long strings with ellipsis", () => {
+    const long = "a".repeat(100);
+    const res = formatPayload(long, { maxStringLength: 20 });
+    expect(res).toContain("…");
+    expect(res.length).toBeLessThan(40);
+  });
+
+  it("formats arrays with maxBreadth truncation", () => {
+    const res = formatPayload([1, 2, 3, 4, 5], { maxBreadth: 2 });
+    expect(res).toBe("[1, 2, …+3 more]");
+  });
+
+  it("formats objects with depth and breadth limits", () => {
+    const obj = { a: 1, b: 2, c: 3, d: 4 };
+    const res = formatPayload(obj, { maxBreadth: 2 });
+    expect(res).toContain("a: 1");
+    expect(res).toContain("b: 2");
+    expect(res).toContain("…+2 more");
+  });
+
+  it("handles circular references safely without throwing", () => {
+    const circular: any = { name: "loop" };
+    circular.self = circular;
+    expect(() => formatPayload(circular)).not.toThrow();
+    const res = formatPayload(circular);
+    expect(res).toContain("[Circular]");
+  });
+
+  it("formats Error instances", () => {
+    const err = new Error("Invalid credentials");
+    const res = formatPayload(err);
+    expect(res).toBe("Error: Invalid credentials");
+  });
+});
+
+describe("Server Function Framework Detection", () => {
+  it("detects TanStack Start server functions and decodes export and file", () => {
+    const token = Buffer.from(
+      JSON.stringify({
+        export: "getAuthSession_createServerFn_handler",
+        file: "/src/routes/__root.tsx?split",
+      }),
+    ).toString("base64url");
+    const url = `/_serverFn/${token}`;
+    const detected = detectServerFunction(url, {});
+    expect(detected).not.toBeNull();
+    expect(detected?.functionName).toBe("getAuthSession");
+    expect(detected?.filePath).toBe("routes/__root.tsx");
+  });
+
+  it("detects React Server Actions from headers", () => {
+    const headers = { "next-action": "submitAction123" };
+    const detected = detectServerFunction("/api/action", headers);
+    expect(detected).not.toBeNull();
+    expect(detected?.functionName).toBe("submitAction123");
+  });
+
+  it("detects Astro Server Actions from URL path", () => {
+    const detected = detectServerFunction("/_actions/contactUs", {});
+    expect(detected).not.toBeNull();
+    expect(detected?.functionName).toBe("contactUs");
+    expect(detected?.filePath).toBe("src/actions");
+  });
+});
+
+describe("Server Function Args and Result Parsers", () => {
+  it("parses JSON POST body with TanStack data wrapper", () => {
+    const body = [Buffer.from(JSON.stringify({ data: { count: 10 } }))];
+    const args = parseServerFnArgs("/_serverFn/test", "POST", { "content-type": "application/json" }, body);
+    expect(args).toEqual({ count: 10 });
+  });
+
+  it("parses URL query params for GET server functions", () => {
+    const args = parseServerFnArgs("/_serverFn/test?data=%7B%22filter%22%3A%22active%22%7D", "GET", {}, []);
+    expect(args).toEqual({ filter: "active" });
+  });
+
+  it("parses return value and error results", () => {
+    const successRes = [Buffer.from(JSON.stringify({ user: "Alice" }))];
+    expect(parseServerFnResult(200, successRes)).toEqual({ user: "Alice" });
+
+    const errRes = [Buffer.from(JSON.stringify({ message: "Forbidden" }))];
+    expect(parseServerFnResult(403, errRes)).toBe("Forbidden");
   });
 });

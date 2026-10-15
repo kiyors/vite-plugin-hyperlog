@@ -5,7 +5,7 @@
 )]
 #![expect(
   clippy::too_many_arguments,
-  reason = "NAPI interface matches JS formatLogEntry signature with 8 arguments"
+  reason = "NAPI interface signatures have 8-9 arguments"
 )]
 
 pub mod ansi;
@@ -60,6 +60,39 @@ pub fn format_route_log(
 
 #[napi]
 #[must_use]
+pub fn format_server_fn_log(
+  function_name: String,
+  file_path: String,
+  line_number: Option<u32>,
+  status: u32,
+  duration_ms: f64,
+  args: Option<String>,
+  result: Option<String>,
+  is_tree_child: Option<bool>,
+  repeat_count: Option<u32>,
+) -> Option<String> {
+  server_fn::format_server_fn_log(
+    &function_name,
+    &file_path,
+    line_number,
+    status,
+    duration_ms,
+    args.as_deref(),
+    result.as_deref(),
+    is_tree_child,
+    repeat_count,
+  )
+}
+
+#[napi]
+#[must_use]
+pub fn format_server_fn_payload(raw: String, max_len: Option<u32>) -> String {
+  let limit = max_len.unwrap_or(60) as usize;
+  server_fn::format_payload_preview(&raw, limit)
+}
+
+#[napi]
+#[must_use]
 pub fn format_browser_log(
   log_type: String,
   message: String,
@@ -87,6 +120,12 @@ pub fn get_browser_logger_script() -> String {
 
 #[napi]
 #[must_use]
+pub fn get_server_fn_overlay_script() -> String {
+  server_fn::get_server_fn_overlay_script()
+}
+
+#[napi]
+#[must_use]
 pub fn parse_route_tree_ast(content: String) -> Vec<String> {
   oxc_routes::parse_route_tree_ast(&content)
 }
@@ -105,4 +144,44 @@ pub fn remap_source_position(
 #[must_use]
 pub fn remap_stack_trace(sourcemap_json: String, stack: String) -> String {
   sourcemap::remap_stack_trace(&sourcemap_json, &stack)
+}
+
+#[napi(object)]
+pub struct DecodedServerFn {
+  pub function_name: String,
+  pub file_path: String,
+}
+
+#[napi]
+#[must_use]
+pub fn decode_server_fn(url: String) -> Option<DecodedServerFn> {
+  let (function_name, file_path) = server_fn::decode_server_fn(&url)?;
+  Some(DecodedServerFn {
+    function_name,
+    file_path,
+  })
+}
+
+#[napi]
+#[must_use]
+pub fn matches_exclusion(url: String, pattern: String) -> bool {
+  request::matches_exclusion(&url, &pattern)
+}
+
+#[napi]
+#[must_use]
+pub fn is_module_request(url: String) -> bool {
+  request::is_module_request(&url)
+}
+
+#[napi]
+#[must_use]
+pub fn should_exclude_request(url: String, exclusions: Vec<String>, exclude_modules: bool) -> bool {
+  request::should_exclude_request(&url, &exclusions, exclude_modules)
+}
+
+#[napi]
+#[must_use]
+pub fn match_route_path(path: String, routes: Vec<String>) -> Option<String> {
+  oxc_routes::match_route_path(&path, &routes)
 }

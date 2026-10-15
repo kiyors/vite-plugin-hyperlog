@@ -40,6 +40,7 @@
     ".windsurf/**",
     "**/src/routeTree.gen.ts",
     "playground/**",
-    "tools/oxlint/anti-slop/**"
+    "tools/oxlint/anti-slop/**",
+    "next.js/**"
   ]
 }

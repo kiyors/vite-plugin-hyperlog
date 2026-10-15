@@ -3,13 +3,24 @@ import path from "node:path";
 
 import type { Plugin } from "vite";
 
-import { formatLogEntry, formatRouteLog, parseRouteTreeAst } from "../index.js";
+import {
+  formatLogEntry,
+  formatRouteLog,
+  formatServerFnLog,
+  matchRoutePath,
+  parseRouteTreeAst,
+  shouldExcludeRequest,
+} from "../index.js";
 import {
   attachRouteEndpoint,
   browserLogger,
-  matchesExclusion,
+  detectServerFunction,
+  formatPayload,
+  parseServerFnArgs,
+  parseServerFnResult,
   type RequestLoggerConfig,
   type RoutePayload,
+  type ServerFunctionConfig,
 } from "./plugin";
 
 export interface TanStackLoggerConfig extends RequestLoggerConfig {
@@ -148,21 +159,6 @@ const DEFAULT_EXCLUDE_URLS = [
   "/__hyperlog",
 ];
 const TANSTACK_EXCLUDE_PATTERNS = ["?tsr-split", "virtual:tanstack-start", "/@id/virtual:", "/@id/", "/@fs/"];
-const SOURCE_MODULE_RE = /\.(?:tsx|ts|jsx|js|css)$/;
-
-function isSourceModule(url: string): boolean {
-  if (url.startsWith("/api") || url.startsWith("/_serverFn")) {
-    return false;
-  }
-  const cleanPath = url.split("?")[0];
-  return (
-    cleanPath.startsWith("/src/") ||
-    cleanPath.startsWith("/node_modules/") ||
-    cleanPath.includes("node_modules") ||
-    cleanPath.startsWith("/@") ||
-    SOURCE_MODULE_RE.test(cleanPath)
-  );
-}
 
 interface PendingServerFn {
   timer: ReturnType<typeof setTimeout>;
@@ -183,6 +179,7 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
   const groupWindowMs = config?.groupServerFnWindowMs ?? 80;
 
   let routeMatchers: RouteMatcher[] = [];
+  let routePatterns: string[] = [];
   const routeCache = new Map<string, string | null>();
   const pendingServerFns = new Map<string, PendingServerFn>();
   const MAX_PENDING_SERVER_FNS = 250;
@@ -192,6 +189,7 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
     ...(config?.excludeUrls || []),
     ...(config?.excludeApis ? ["/api"] : []),
   ];
+  const allExclusions = [...exclusions, ...TANSTACK_EXCLUDE_PATTERNS];
   const excludedMethods = config?.excludeReqType
     ? new Set(config.excludeReqType.map((type) => type.toUpperCase()))
     : null;
@@ -243,18 +241,10 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
       return cached;
     }
 
-    for (let i = 0; i < routeMatchers.length; i++) {
-      if (routeMatchers[i].regex.test(cleanPath)) {
-        const pattern = routeMatchers[i].pattern;
-        if (routeCache.size > 256) routeCache.clear();
-        routeCache.set(cleanPath, pattern);
-        return pattern;
-      }
-    }
-
+    const pattern = matchRoutePath(cleanPath, routePatterns);
     if (routeCache.size > 256) routeCache.clear();
-    routeCache.set(cleanPath, null);
-    return null;
+    routeCache.set(cleanPath, pattern);
+    return pattern;
   };
 
   return {
@@ -270,6 +260,7 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
           if (fs.existsSync(treeAbsolutePath)) {
             const content = fs.readFileSync(treeAbsolutePath, "utf-8");
             routeMatchers = parseRouteTreeContent(content);
+            routePatterns = routeMatchers.map((m) => m.pattern);
             routeCache.clear();
           }
         } catch {
@@ -320,23 +311,61 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
           return next();
         }
 
-        // Segment-aware so "/api" does not also swallow "/api-key".
-        for (let i = 0; i < exclusions.length; i++) {
-          if (matchesExclusion(url, exclusions[i])) {
-            return next();
-          }
+        if (shouldExcludeRequest(url, allExclusions, excludeModules)) {
+          return next();
         }
 
-        // Filter out internal module compilation noise when excludeModules is enabled
-        if (excludeModules) {
-          for (let i = 0; i < TANSTACK_EXCLUDE_PATTERNS.length; i++) {
-            if (url.includes(TANSTACK_EXCLUDE_PATTERNS[i])) {
-              return next();
+        const sf = config?.serverFunctions;
+        // SAFETY: sf is validated to be a configuration object and not a boolean
+        const serverFnConfig = Boolean(sf) && sf !== true ? (sf as ServerFunctionConfig) : null;
+        const isServerFnLoggingEnabled = serverFnConfig !== null && serverFnConfig.enabled !== false;
+        const serverFnFormat = serverFnConfig?.format ?? "tree";
+
+        const serverFnDetails = isServerFnLoggingEnabled
+          ? detectServerFunction(url, req.headers, serverFnConfig?.resolveServerFn, req)
+          : null;
+
+        const bodyBytes: Buffer[] = [];
+        let totalBodyLen = 0;
+        const MAX_CAPTURE_BYTES = 64 * 1024;
+
+        if (serverFnDetails && serverFnConfig?.logArgs !== false && method !== "GET") {
+          const origEmit = req.emit;
+          req.emit = function (event: string, ...args: any[]) {
+            if (event === "data" && totalBodyLen < MAX_CAPTURE_BYTES) {
+              const chunk = args[0];
+              const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+              bodyBytes.push(b);
+              totalBodyLen += b.length;
             }
-          }
-          if (isSourceModule(url)) {
-            return next();
-          }
+            return origEmit.apply(this, [event, ...args]);
+          };
+        }
+
+        const resBytes: Buffer[] = [];
+        let totalResLen = 0;
+
+        if (serverFnDetails && serverFnConfig?.logReturns !== false) {
+          const origWrite = res.write;
+          const origEnd = res.end;
+
+          res.write = function (chunk: any, ...args: any[]) {
+            if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
+              const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+              resBytes.push(b);
+              totalResLen += b.length;
+            }
+            return origWrite.apply(this, [chunk, ...args]);
+          };
+
+          res.end = function (chunk: any, ...args: any[]) {
+            if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
+              const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+              resBytes.push(b);
+              totalResLen += b.length;
+            }
+            return origEnd.apply(this, [chunk, ...args]);
+          };
         }
 
         const start = performance.now();
@@ -358,6 +387,90 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
           const routeName = resolveRouteName(url);
 
           const isServerFn = url.startsWith("/_serverFn");
+
+          if (serverFnDetails) {
+            const parsedArgs =
+              serverFnConfig?.logArgs !== false ? parseServerFnArgs(url, method, req.headers, bodyBytes) : undefined;
+            const parsedResult =
+              serverFnConfig?.logReturns !== false ? parseServerFnResult(status, resBytes) : undefined;
+
+            const formattedArgs =
+              parsedArgs !== undefined
+                ? formatPayload(parsedArgs, {
+                    maxDepth: serverFnConfig?.maxDepth,
+                    maxBreadth: serverFnConfig?.maxBreadth,
+                    maxStringLength: serverFnConfig?.maxStringLength,
+                  })
+                : null;
+
+            const formattedResult =
+              parsedResult !== undefined
+                ? formatPayload(parsedResult, {
+                    maxDepth: serverFnConfig?.maxDepth,
+                    maxBreadth: serverFnConfig?.maxBreadth,
+                    maxStringLength: serverFnConfig?.maxStringLength,
+                  })
+                : null;
+
+            if (serverFnFormat === "tree") {
+              const requestLine = formatLogEntry(
+                url,
+                method,
+                status,
+                durationMs,
+                contentLength,
+                redirectLocation,
+                routeName,
+                null,
+              );
+              if (requestLine) console.log(requestLine);
+
+              const fnLine = formatServerFnLog(
+                serverFnDetails.functionName,
+                serverFnDetails.filePath,
+                serverFnDetails.lineNumber ?? null,
+                status,
+                durationMs,
+                formattedArgs,
+                formattedResult,
+                true, // isTreeChild
+                null,
+              );
+              if (fnLine) console.log(fnLine);
+            } else {
+              const fnLine = formatServerFnLog(
+                serverFnDetails.functionName,
+                serverFnDetails.filePath,
+                serverFnDetails.lineNumber ?? null,
+                status,
+                durationMs,
+                formattedArgs,
+                formattedResult,
+                false, // standalone
+                null,
+              );
+              if (fnLine) console.log(fnLine);
+            }
+
+            try {
+              server.ws.send({
+                type: "custom",
+                event: "vite-plugin-hyperlog:server-fn",
+                data: {
+                  name: serverFnDetails.functionName,
+                  file: serverFnDetails.filePath,
+                  status,
+                  durationMs,
+                  args: parsedArgs,
+                  result: parsedResult,
+                  browserConsole: Boolean(serverFnConfig?.browserConsole),
+                },
+              });
+            } catch {
+              // Ignore WS errors
+            }
+            return;
+          }
 
           // Group and debounce repeated server functions
           if (isServerFn && groupServerFn) {
@@ -429,7 +542,11 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
  * Convenient unified TanStack logger plugin that registers both requestLogger and browserLogger.
  */
 export function tanstackLogger(config?: TanStackLoggerConfig): Plugin[] {
-  return [requestLogger(config), browserLogger()];
+  const sf = config?.serverFunctions;
+  // SAFETY: sf is validated to be a configuration object and not a boolean
+  const sfConfig = Boolean(sf) && sf !== true ? (sf as ServerFunctionConfig) : undefined;
+  const uiEnabled = config?.serverFunctions !== false && sfConfig?.ui !== false;
+  return [requestLogger(config), browserLogger({ serverFunctionUi: uiEnabled })];
 }
 
 export { browserLogger };

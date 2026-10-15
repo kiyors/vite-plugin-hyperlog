@@ -1,6 +1,9 @@
 #[must_use]
 #[inline]
 pub fn unescape_json(s: &str) -> String {
+  if !s.contains('\\') {
+    return s.to_string();
+  }
   let mut out = String::with_capacity(s.len());
   let mut chars = s.chars();
   while let Some(c) = chars.next() {
@@ -28,31 +31,48 @@ pub fn unescape_json(s: &str) -> String {
   out
 }
 
+#[inline]
+fn find_key_pos(json: &str, field: &str) -> Option<(usize, usize)> {
+  if field.len() <= 62 {
+    let mut buf = [0u8; 64];
+    let first = buf.get_mut(0)?;
+    *first = b'"';
+    let mid = buf.get_mut(1..=field.len())?;
+    mid.copy_from_slice(field.as_bytes());
+    let end_idx = field.len().saturating_add(1);
+    let last = buf.get_mut(end_idx)?;
+    *last = b'"';
+    let key_bytes = buf.get(..=end_idx)?;
+    let search_key = core::str::from_utf8(key_bytes).ok()?;
+    let pos = json.find(search_key)?;
+    Some((pos, search_key.len()))
+  } else {
+    let search_key = format!("\"{field}\"");
+    let pos = json.find(&search_key)?;
+    Some((pos, search_key.len()))
+  }
+}
+
 #[must_use]
 #[inline]
 pub fn extract_json_field<'a>(json: &'a str, field: &str) -> Option<&'a str> {
-  let mut search_key = String::with_capacity(field.len() + 4);
-  search_key.push('"');
-  search_key.push_str(field);
-  search_key.push('"');
-
-  let key_pos = json.find(&search_key)?;
-  let after_key = json.get(key_pos + search_key.len()..)?;
+  let (key_pos, key_len) = find_key_pos(json, field)?;
+  let after_key = json.get(key_pos.saturating_add(key_len)..)?;
   let colon_pos = after_key.find(':')?;
-  let after_colon = after_key.get(colon_pos + 1..)?.trim_start();
+  let after_colon = after_key.get(colon_pos.saturating_add(1)..)?.trim_start();
 
   if let Some(stripped) = after_colon.strip_prefix('"') {
     let bytes = stripped.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
       if bytes.get(i) == Some(&b'\\') {
-        i += 2;
+        i = i.saturating_add(2);
         continue;
       }
       if bytes.get(i) == Some(&b'"') {
         return stripped.get(..i);
       }
-      i += 1;
+      i = i.saturating_add(1);
     }
   }
   None
@@ -60,21 +80,16 @@ pub fn extract_json_field<'a>(json: &'a str, field: &str) -> Option<&'a str> {
 
 #[must_use]
 pub fn extract_json_string_array(json: &str, field: &str) -> Vec<String> {
-  let mut search_key = String::with_capacity(field.len() + 4);
-  search_key.push('"');
-  search_key.push_str(field);
-  search_key.push('"');
-
-  let Some(key_pos) = json.find(&search_key) else {
+  let Some((key_pos, key_len)) = find_key_pos(json, field) else {
     return Vec::new();
   };
-  let Some(after_key) = json.get(key_pos + search_key.len()..) else {
+  let Some(after_key) = json.get(key_pos.saturating_add(key_len)..) else {
     return Vec::new();
   };
   let Some(bracket_pos) = after_key.find('[') else {
     return Vec::new();
   };
-  let Some(after_bracket) = after_key.get(bracket_pos + 1..) else {
+  let Some(after_bracket) = after_key.get(bracket_pos.saturating_add(1)..) else {
     return Vec::new();
   };
 

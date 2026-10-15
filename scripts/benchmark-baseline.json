@@ -1,0 +1,134 @@
+{
+  "version": "0.2.1",
+  "updatedAt": "2026-10-15T05:25:26.782Z",
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "node": "v24.21.0"
+  },
+  "realWorldSimulation": {
+    "totalOps": 500000,
+    "wallMs": 356.49825000000055,
+    "throughputOpsSec": 1402531,
+    "avgLatencyUs": 0.712996500000001
+  },
+  "complexScenarios": {
+    "Enterprise 60+ route tree AST (120 routes)": {
+      "ops": 32755,
+      "latUs": 30.529
+    },
+    "Production 14-frame minified stack remapping": {
+      "ops": 184254,
+      "latUs": 5.427
+    },
+    "High-concurrency burst (100 clients × 1000 reqs)": {
+      "ops": 1338189,
+      "latUs": 0.747
+    },
+    "Heavy JSON syntax-colorizer (5.7 KB)": {
+      "ops": 32583,
+      "latUs": 30.691
+    }
+  },
+  "stressScenarios": {
+    "Giant 100KB message payload": {
+      "ops": 4789,
+      "latUs": 208.794
+    },
+    "Ultra-deep 100-frame stack trace": {
+      "ops": 48274,
+      "latUs": 20.715
+    },
+    "Rapid-fire cached time formatting (2M calls)": {
+      "ops": 2119489,
+      "latUs": 0.472
+    }
+  },
+  "benchmarks": {
+    "formatLogEntry (6-path mixed)": {
+      "avgOps": 1226963,
+      "avgLatUs": 0.815,
+      "p99LatUs": 0.819,
+      "minOps": 1220720,
+      "maxOps": 1236684
+    },
+    "formatBrowserLog (6-type mixed)": {
+      "avgOps": 1130147,
+      "avgLatUs": 0.885,
+      "p99LatUs": 0.89,
+      "minOps": 1123575,
+      "maxOps": 1139013
+    },
+    "formatRouteLog (4-variant mixed)": {
+      "avgOps": 1693170,
+      "avgLatUs": 0.591,
+      "p99LatUs": 0.596,
+      "minOps": 1678884,
+      "maxOps": 1711243
+    },
+    "parseRouteTreeAst (15 routes)": {
+      "avgOps": 276618,
+      "avgLatUs": 3.615,
+      "p99LatUs": 3.639,
+      "minOps": 274765,
+      "maxOps": 278535
+    },
+    "remapSourcePosition": {
+      "avgOps": 1076762,
+      "avgLatUs": 0.929,
+      "p99LatUs": 0.936,
+      "minOps": 1068813,
+      "maxOps": 1080291
+    },
+    "remapStackTrace (5-frame stack)": {
+      "avgOps": 642857,
+      "avgLatUs": 1.556,
+      "p99LatUs": 1.574,
+      "minOps": 635349,
+      "maxOps": 653678
+    },
+    "getBrowserLoggerScript": {
+      "avgOps": 2414486,
+      "avgLatUs": 0.414,
+      "p99LatUs": 0.418,
+      "minOps": 2394829,
+      "maxOps": 2438729
+    },
+    "shouldExcludeRequest (mixed dev traffic)": {
+      "avgOps": 2480223,
+      "avgLatUs": 0.403,
+      "p99LatUs": 0.41,
+      "minOps": 2436441,
+      "maxOps": 2501814
+    },
+    "decodeServerFn (SIMD base64 + JSON)": {
+      "avgOps": 1511167,
+      "avgLatUs": 0.663,
+      "p99LatUs": 0.713,
+      "minOps": 1403277,
+      "maxOps": 1547135
+    },
+    "formatServerFnLog (tree & standalone)": {
+      "avgOps": 892517,
+      "avgLatUs": 1.12,
+      "p99LatUs": 1.131,
+      "minOps": 883922,
+      "maxOps": 904313
+    },
+    "matchRoutePath (dynamic parameter matching)": {
+      "avgOps": 1014204,
+      "avgLatUs": 0.986,
+      "p99LatUs": 0.993,
+      "minOps": 1006847,
+      "maxOps": 1021313
+    },
+    "getServerFnOverlayScript": {
+      "avgOps": 201226,
+      "avgLatUs": 4.97,
+      "p99LatUs": 5,
+      "minOps": 199998,
+      "maxOps": 202428
+    }
+  }
+}

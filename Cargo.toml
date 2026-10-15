@@ -27,6 +27,9 @@ codegen-units = 1
 strip = true
 panic = "abort"
 
+[profile.release.build-override]
+strip = false
+
 [lints.clippy]
 # 1. The Pedantic Baseline
 pedantic = { level = "warn", priority = -1 }

@@ -9,6 +9,13 @@
  */
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
+export interface DecodedServerFn {
+  functionName: string
+  filePath: string
+}
+
+export declare function decodeServerFn(url: string): DecodedServerFn | null
+
 export declare function formatBrowserLog(logType: string, message: string, caller?: string | undefined | null, repeatCount?: number | undefined | null): string | null
 
 export declare function formatGraphReevaluation(distinctModules: number, repeatedRequests: number, windowMs: number): string
@@ -17,7 +24,19 @@ export declare function formatLogEntry(originalUrl: string, method: string, stat
 
 export declare function formatRouteLog(routeId: string, path: string, params?: string | undefined | null, durationMs?: number | undefined | null, isPreload?: boolean | undefined | null): string | null
 
+export declare function formatServerFnLog(functionName: string, filePath: string, lineNumber: number | undefined | null, status: number, durationMs: number, args?: string | undefined | null, result?: string | undefined | null, isTreeChild?: boolean | undefined | null, repeatCount?: number | undefined | null): string | null
+
+export declare function formatServerFnPayload(raw: string, maxLen?: number | undefined | null): string
+
 export declare function getBrowserLoggerScript(): string
+
+export declare function getServerFnOverlayScript(): string
+
+export declare function isModuleRequest(url: string): boolean
+
+export declare function matchesExclusion(url: string, pattern: string): boolean
+
+export declare function matchRoutePath(path: string, routes: Array<string>): string | null
 
 export declare function parseRouteTreeAst(content: string): Array<string>
 
@@ -31,3 +50,5 @@ export interface RemappedPosition {
 export declare function remapSourcePosition(sourcemapJson: string, line: number, column: number): RemappedPosition | null
 
 export declare function remapStackTrace(sourcemapJson: string, stack: string): string
+
+export declare function shouldExcludeRequest(url: string, exclusions: Array<string>, excludeModules: boolean): boolean

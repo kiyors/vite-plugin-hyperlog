@@ -57,7 +57,12 @@
     "test:e2e": "vitest run test/e2e.test.ts",
     "test:watch": "vitest",
     "bench": "node --expose-gc scripts/benchmark.mjs",
-    "bench:quick": "node scripts/benchmark.mjs",
+    "bench:quick": "node scripts/benchmark.mjs --quick",
+    "bench:summary": "node --expose-gc scripts/benchmark.mjs --summary-only",
+    "bench:ci": "node --expose-gc scripts/benchmark.mjs --ci --summary-only",
+    "bench:markdown": "node --expose-gc scripts/benchmark.mjs --markdown",
+    "bench:json": "node --expose-gc scripts/benchmark.mjs --json",
+    "bench:update": "node --expose-gc scripts/benchmark.mjs --update-baseline",
     "preversion": "napi build --platform && tsdown && git add .",
     "version": "napi build --platform && tsdown && git add index.js dist/",
     "prepare": "husky"

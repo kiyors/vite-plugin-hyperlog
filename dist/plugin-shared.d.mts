@@ -1,5 +1,37 @@
+import { IncomingHttpHeaders, IncomingMessage } from "node:http";
 import { Plugin } from "vite";
+//#region src/server-fn-utils.d.ts
+interface FormatPayloadOptions {
+  maxDepth?: number;
+  maxBreadth?: number;
+  maxStringLength?: number;
+}
+/**
+ * Safely format any JavaScript value (including circular objects, errors, FormData)
+ * into a compact, human-readable string representation without external dependencies.
+ */
+declare function formatPayload(val: any, options?: FormatPayloadOptions, depth?: number, seen?: WeakSet<WeakKey>): string;
+interface ServerFnDetails {
+  functionName: string;
+  filePath: string;
+  lineNumber?: number;
+}
+/**
+ * Detects server function / action details across frameworks (TanStack Start, React 19 / RSC, Astro).
+ */
+declare function detectServerFunction(url: string, headers: IncomingHttpHeaders, customResolver?: (req: IncomingMessage) => ServerFnDetails | undefined, req?: IncomingMessage): ServerFnDetails | null;
+/**
+ * Safely parses server function arguments from request body bytes or query string.
+ */
+declare function parseServerFnArgs(url: string, method: string, headers: IncomingHttpHeaders, bodyBytes: Buffer[]): any;
+/**
+ * Safely parses server function return value or error from response body bytes.
+ */
+declare function parseServerFnResult(statusCode: number, resBytes: Buffer[]): any;
+//#endregion
 //#region index.d.ts
+declare function isModuleRequest(url: string): boolean;
+declare function matchesExclusion(url: string, pattern: string): boolean;
 interface RemappedPosition {
   source?: string;
   line: number;
@@ -8,9 +40,75 @@ interface RemappedPosition {
 }
 declare function remapSourcePosition(sourcemapJson: string, line: number, column: number): RemappedPosition | null;
 declare function remapStackTrace(sourcemapJson: string, stack: string): string;
+declare function shouldExcludeRequest(url: string, exclusions: Array<string>, excludeModules: boolean): boolean;
+//#endregion
+//#region src/ui.d.ts
+/**
+ * In-browser DevTools Overlay and Console Mirror script for Server Functions.
+ * Compiled into and served from the native Rust binary via NAPI-RS.
+ */
+declare function getServerFunctionOverlayScript(): string;
 //#endregion
 //#region src/plugin.d.ts
 type ReqType = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD" | "get" | "post" | "put" | "patch" | "delete" | "options" | "head" | "Get" | "Post" | "Put" | "Patch" | "Delete" | "Options" | "Head";
+interface ServerFunctionConfig {
+  /**
+   * Enable or disable server function logging.
+   * @default true
+   */
+  enabled?: boolean;
+  /**
+   * Terminal output format: "tree" (nested under request line like Next.js) or "inline" ([server-fn] badge).
+   * @default "tree"
+   */
+  format?: "tree" | "inline";
+  /**
+   * Log arguments passed to the server function.
+   * @default true
+   */
+  logArgs?: boolean;
+  /**
+   * Log returned value or error from the server function.
+   * @default true
+   */
+  logReturns?: boolean;
+  /**
+   * Maximum argument/return value object nesting depth.
+   * @default 2
+   */
+  maxDepth?: number;
+  /**
+   * Maximum array elements or object keys to log before truncating.
+   * @default 3
+   */
+  maxBreadth?: number;
+  /**
+   * Maximum string length before truncating with ellipsis.
+   * @default 40
+   */
+  maxStringLength?: number;
+  /**
+   * Inject interactive in-browser Server Function DevTools overlay/pill.
+   * @default true
+   */
+  ui?: boolean;
+  /**
+   * Mirror server function logs to the browser developer console.
+   * @default false
+   */
+  browserConsole?: boolean;
+  /**
+   * Custom resolver to identify server functions from request headers or URLs.
+   */
+  resolveServerFn?: (req: IncomingMessage) => ServerFnDetails | undefined;
+}
+interface BrowserLoggerConfig {
+  /**
+   * Enable the in-browser floating DevTools overlay and drawer for inspecting server functions.
+   * @default true
+   */
+  serverFunctionUi?: boolean;
+}
 interface RequestLoggerConfig {
   excludeReqType?: ReqType[];
   excludeUrls?: string[];
@@ -46,24 +144,13 @@ interface RequestLoggerConfig {
    */
   detectGraphReevaluation?: boolean;
   resolveRoute?: (url: string) => string | undefined | null;
+  /**
+   * Configuration for Server Function / Server Action execution logging.
+   * Set to `false` to disable server function execution logging.
+   * @default true
+   */
+  serverFunctions?: boolean | ServerFunctionConfig;
 }
-/**
- * Matches an exclusion pattern against a URL.
- *
- * Patterns starting with `/` are treated as path patterns and must align to
- * segment boundaries, so `/api` matches `/api/users` but not `/api-key` or
- * `/dashboard/apiSettings`. Everything else stays a substring match, which is
- * what query-shaped patterns like `?import` need.
- *
- * @internal exported for tests
- */
-declare function matchesExclusion(url: string, pattern: string): boolean;
-/**
- * True when the URL is a source or dependency module rather than an app request.
- *
- * @internal exported for tests
- */
-declare function isModuleRequest(url: string): boolean;
 interface RoutePayload {
   routeId?: string;
   path?: string;
@@ -85,7 +172,7 @@ declare function requestLogger(config?: RequestLoggerConfig): Plugin;
  * @internal exported for tests
  */
 declare function browserLoggerScriptSrc(base: string): string;
-declare function browserLogger(): Plugin;
+declare function browserLogger(config?: BrowserLoggerConfig): Plugin;
 /**
  * Convenient unified plugin that registers both requestLogger and browserLogger in one call.
  *
@@ -107,4 +194,4 @@ declare function createFrameworkLogger(defaultExclude: string): {
   logger: (config?: RequestLoggerConfig) => Plugin[];
 };
 //#endregion
-export { browserLogger as a, isModuleRequest as c, matchesExclusion as d, requestLogger as f, remapStackTrace as h, attachRouteEndpoint as i, logRouteEvent as l, remapSourcePosition as m, RequestLoggerConfig as n, browserLoggerScriptSrc as o, RemappedPosition as p, RoutePayload as r, createFrameworkLogger as s, ReqType as t, logger as u };
+export { parseServerFnArgs as C, formatPayload as S, remapSourcePosition as _, ServerFunctionConfig as a, ServerFnDetails as b, browserLoggerScriptSrc as c, logger as d, requestLogger as f, matchesExclusion as g, isModuleRequest as h, RoutePayload as i, createFrameworkLogger as l, RemappedPosition as m, ReqType as n, attachRouteEndpoint as o, getServerFunctionOverlayScript as p, RequestLoggerConfig as r, browserLogger as s, BrowserLoggerConfig as t, logRouteEvent as u, remapStackTrace as v, parseServerFnResult as w, detectServerFunction as x, shouldExcludeRequest as y };

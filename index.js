@@ -778,11 +778,19 @@ function __napiStampBindingTarget(exportsObject, target) {
 // linked import resolves to `undefined`.
 module.exports.__napiBindingTarget = __napiStampBindingTarget(nativeBinding, __napiLoadedBindingTarget)
 module.exports = nativeBinding
+module.exports.decodeServerFn = nativeBinding.decodeServerFn
 module.exports.formatBrowserLog = nativeBinding.formatBrowserLog
 module.exports.formatGraphReevaluation = nativeBinding.formatGraphReevaluation
 module.exports.formatLogEntry = nativeBinding.formatLogEntry
 module.exports.formatRouteLog = nativeBinding.formatRouteLog
+module.exports.formatServerFnLog = nativeBinding.formatServerFnLog
+module.exports.formatServerFnPayload = nativeBinding.formatServerFnPayload
 module.exports.getBrowserLoggerScript = nativeBinding.getBrowserLoggerScript
+module.exports.getServerFnOverlayScript = nativeBinding.getServerFnOverlayScript
+module.exports.isModuleRequest = nativeBinding.isModuleRequest
+module.exports.matchesExclusion = nativeBinding.matchesExclusion
+module.exports.matchRoutePath = nativeBinding.matchRoutePath
 module.exports.parseRouteTreeAst = nativeBinding.parseRouteTreeAst
 module.exports.remapSourcePosition = nativeBinding.remapSourcePosition
 module.exports.remapStackTrace = nativeBinding.remapStackTrace
+module.exports.shouldExcludeRequest = nativeBinding.shouldExcludeRequest

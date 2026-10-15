@@ -4,7 +4,7 @@ var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).expor
 var __require = /* #__PURE__ */ (() => createRequire(import.meta.url))();
 //#endregion
 //#region index.js
-var require_vite_plugin_hyperlog = /* @__PURE__ */ __commonJSMin(((exports, module) => {
+var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	const { readFileSync } = __require("fs");
 	let nativeBinding = null;
 	let __napiLoadedBindingTarget = "native";
@@ -577,18 +577,26 @@ var require_vite_plugin_hyperlog = /* @__PURE__ */ __commonJSMin(((exports, modu
 	}
 	module.exports.__napiBindingTarget = __napiStampBindingTarget(nativeBinding, __napiLoadedBindingTarget);
 	module.exports = nativeBinding;
+	module.exports.decodeServerFn = nativeBinding.decodeServerFn;
 	module.exports.formatBrowserLog = nativeBinding.formatBrowserLog;
 	module.exports.formatGraphReevaluation = nativeBinding.formatGraphReevaluation;
 	module.exports.formatLogEntry = nativeBinding.formatLogEntry;
 	module.exports.formatRouteLog = nativeBinding.formatRouteLog;
+	module.exports.formatServerFnLog = nativeBinding.formatServerFnLog;
+	module.exports.formatServerFnPayload = nativeBinding.formatServerFnPayload;
 	module.exports.getBrowserLoggerScript = nativeBinding.getBrowserLoggerScript;
+	module.exports.getServerFnOverlayScript = nativeBinding.getServerFnOverlayScript;
+	module.exports.isModuleRequest = nativeBinding.isModuleRequest;
+	module.exports.matchesExclusion = nativeBinding.matchesExclusion;
+	module.exports.matchRoutePath = nativeBinding.matchRoutePath;
 	module.exports.parseRouteTreeAst = nativeBinding.parseRouteTreeAst;
 	module.exports.remapSourcePosition = nativeBinding.remapSourcePosition;
 	module.exports.remapStackTrace = nativeBinding.remapStackTrace;
+	module.exports.shouldExcludeRequest = nativeBinding.shouldExcludeRequest;
 }));
 //#endregion
 //#region src/graph.ts
-var import_vite_plugin_hyperlog = require_vite_plugin_hyperlog();
+var import_vite_plugin_logger = require_vite_plugin_logger();
 /** Repeated module requests within one page load that suggest a graph re-walk. */
 const REPEAT_THRESHOLD = 8;
 /**
@@ -653,6 +661,200 @@ var GraphReevaluationDetector = class {
 	}
 };
 //#endregion
+//#region src/server-fn-utils.ts
+/**
+* Safely format any JavaScript value (including circular objects, errors, FormData)
+* into a compact, human-readable string representation without external dependencies.
+*/
+function formatPayload(val, options, depth = 0, seen = /* @__PURE__ */ new WeakSet()) {
+	const maxDepth = options?.maxDepth ?? 2;
+	const maxBreadth = options?.maxBreadth ?? 3;
+	const maxStrLen = options?.maxStringLength ?? 40;
+	if (val === void 0) return "undefined";
+	if (val === null) return "null";
+	if (val === true) return "true";
+	if (val === false) return "false";
+	if (Buffer.isBuffer(val)) return val.toString("utf-8");
+	const tag = Object.prototype.toString.call(val);
+	if (tag === "[object String]") {
+		const s = val;
+		if (s.length > maxStrLen) return JSON.stringify(s.slice(0, maxStrLen) + "…");
+		return JSON.stringify(s);
+	}
+	if (tag === "[object Number]") return String(val);
+	if (tag === "[object BigInt]") return `${val}n`;
+	if (tag === "[object Symbol]") return val.toString();
+	if (tag === "[object Function]") {
+		const fn = val;
+		return fn.name ? `ƒ ${fn.name}()` : "ƒ()";
+	}
+	if (Boolean(val) && (tag === "[object Object]" || Array.isArray(val) || val instanceof Error || tag === "[object FormData]" || tag === "[object URLSearchParams]")) {
+		if (seen.has(val)) return "[Circular]";
+		seen.add(val);
+	}
+	if (val instanceof Error) return val.name ? `${val.name}: ${val.message}` : val.message || "Error";
+	if (depth >= maxDepth) {
+		if (Array.isArray(val)) return `[Array(${val.length})]`;
+		return "[Object]";
+	}
+	if (Array.isArray(val)) {
+		if (val.length === 0) return "[]";
+		const items = [];
+		const len = Math.min(val.length, maxBreadth);
+		for (let i = 0; i < len; i++) items.push(formatPayload(val[i], options, depth + 1, seen));
+		if (val.length > maxBreadth) items.push(`…+${val.length - maxBreadth} more`);
+		return `[${items.join(", ")}]`;
+	}
+	if (tag === "[object FormData]" || tag === "[object URLSearchParams]" || Boolean(val) && Boolean(val.entries)) {
+		const entries = [];
+		try {
+			for (const [k, v] of val.entries()) {
+				entries.push([k, v]);
+				if (entries.length >= maxBreadth) break;
+			}
+			const fields = entries.map(([k, v]) => {
+				return `${k}: ${Object.prototype.toString.call(v) === "[object Object]" && Boolean(v) && "name" in v ? String(v.name) : formatPayload(v, options, depth + 1, seen)}`;
+			});
+			return `${val.constructor?.name || "FormData"} { ${fields.join(", ")} }`;
+		} catch {
+			return `[${val.constructor?.name || "FormData"}]`;
+		}
+	}
+	const keys = Object.keys(val);
+	if (keys.length === 0) return "{}";
+	const fields = [];
+	const len = Math.min(keys.length, maxBreadth);
+	for (let i = 0; i < len; i++) {
+		const k = keys[i];
+		let propVal;
+		try {
+			propVal = val[k];
+		} catch {
+			propVal = "[Unreadable]";
+		}
+		const formattedVal = formatPayload(propVal, options, depth + 1, seen);
+		fields.push(`${k}: ${formattedVal}`);
+	}
+	if (keys.length > maxBreadth) fields.push(`…+${keys.length - maxBreadth} more`);
+	return `{ ${fields.join(", ")} }`;
+}
+/**
+* Decodes TanStack Start base64 payload into function and file path.
+*/
+function decodeTanStackServerFn(url) {
+	const decoded = (0, import_vite_plugin_logger.decodeServerFn)(url);
+	if (!decoded) return null;
+	return {
+		functionName: decoded.functionName,
+		filePath: decoded.filePath
+	};
+}
+/**
+* Detects server function / action details across frameworks (TanStack Start, React 19 / RSC, Astro).
+*/
+function detectServerFunction(url, headers, customResolver, req) {
+	if (customResolver && req) {
+		const custom = customResolver(req);
+		if (custom) return custom;
+	}
+	if (url.startsWith("/_serverFn")) {
+		const tanstack = decodeTanStackServerFn(url);
+		if (tanstack) return tanstack;
+		return {
+			functionName: "serverFn",
+			filePath: "src"
+		};
+	}
+	const rawAction = headers["next-action"] || headers["rsc-action-id"] || headers["x-action-name"];
+	const nextAction = Array.isArray(rawAction) ? rawAction[0] : rawAction;
+	if (nextAction) {
+		const actStr = String(nextAction);
+		return {
+			functionName: actStr.length > 24 ? actStr.slice(0, 16) + "…" : actStr,
+			filePath: "server action"
+		};
+	}
+	if (url.startsWith("/_actions/")) {
+		const actionPath = url.slice(10).split("?")[0];
+		if (actionPath) return {
+			functionName: actionPath,
+			filePath: "src/actions"
+		};
+	}
+	return null;
+}
+/**
+* Safely parses server function arguments from request body bytes or query string.
+*/
+function parseServerFnArgs(url, method, headers, bodyBytes) {
+	try {
+		if (method === "GET") {
+			const qIndex = url.indexOf("?");
+			if (qIndex !== -1) {
+				const query = url.slice(qIndex + 1);
+				const params = new URLSearchParams(query);
+				const dataParam = params.get("data") || params.get("args") || params.get("payload");
+				if (dataParam) try {
+					return JSON.parse(dataParam);
+				} catch {
+					return dataParam;
+				}
+			}
+			return;
+		}
+		if (bodyBytes.length === 0) return void 0;
+		const rawBody = Buffer.concat(bodyBytes).toString("utf-8");
+		if (!rawBody.trim()) return void 0;
+		const contentType = String(headers["content-type"] || "");
+		if (contentType.includes("application/json") || rawBody.startsWith("{") || rawBody.startsWith("[")) try {
+			const parsed = JSON.parse(rawBody);
+			if (Boolean(parsed) && Object.prototype.toString.call(parsed) === "[object Object]" && "data" in parsed) return parsed.data;
+			return parsed;
+		} catch {
+			return rawBody.slice(0, 100);
+		}
+		if (contentType.includes("application/x-www-form-urlencoded")) {
+			const params = new URLSearchParams(rawBody);
+			const obj = {};
+			for (const [k, v] of params.entries()) obj[k] = v;
+			return obj;
+		}
+		return rawBody.slice(0, 80);
+	} catch {
+		return;
+	}
+}
+/**
+* Safely parses server function return value or error from response body bytes.
+*/
+function parseServerFnResult(statusCode, resBytes) {
+	try {
+		if (resBytes.length === 0) return void 0;
+		const rawRes = Buffer.concat(resBytes).toString("utf-8");
+		if (!rawRes.trim()) return void 0;
+		try {
+			const parsed = JSON.parse(rawRes);
+			if (statusCode >= 400) {
+				if (Boolean(parsed) && Object.prototype.toString.call(parsed) === "[object Object]") return parsed.message || parsed.error || parsed;
+			}
+			return parsed;
+		} catch {
+			return rawRes.slice(0, 100);
+		}
+	} catch {
+		return;
+	}
+}
+//#endregion
+//#region src/ui.ts
+/**
+* In-browser DevTools Overlay and Console Mirror script for Server Functions.
+* Compiled into and served from the native Rust binary via NAPI-RS.
+*/
+function getServerFunctionOverlayScript() {
+	return (0, import_vite_plugin_logger.getServerFnOverlayScript)();
+}
+//#endregion
 //#region src/plugin.ts
 const DEFAULT_EXCLUDE_URLS = [
 	"?import",
@@ -665,51 +867,8 @@ const DEFAULT_EXCLUDE_URLS = [
 	"/.well-known",
 	"/__hyperlog"
 ];
-const SOURCE_MODULE_RE = /\.(?:tsx|ts|jsx|js|mjs|cjs|css|vue|svelte)$/;
 /** Maximum accepted body size for the SPA route reporting endpoint. */
 const MAX_ROUTE_BODY_BYTES = 65536;
-/**
-* Matches an exclusion pattern against a URL.
-*
-* Patterns starting with `/` are treated as path patterns and must align to
-* segment boundaries, so `/api` matches `/api/users` but not `/api-key` or
-* `/dashboard/apiSettings`. Everything else stays a substring match, which is
-* what query-shaped patterns like `?import` need.
-*
-* @internal exported for tests
-*/
-function matchesExclusion(url, pattern) {
-	if (!pattern.startsWith("/")) return url.includes(pattern);
-	const queryIndex = url.indexOf("?");
-	const pathname = queryIndex === -1 ? url : url.slice(0, queryIndex);
-	let from = 0;
-	for (;;) {
-		const idx = pathname.indexOf(pattern, from);
-		if (idx === -1) return false;
-		const before = idx === 0 ? void 0 : pathname[idx - 1];
-		const after = pathname[idx + pattern.length];
-		const startsSegment = before === void 0 || before === "/";
-		const endsSegment = pattern.endsWith("/") || after === void 0 || after === "/";
-		if (startsSegment && endsSegment) return true;
-		from = idx + 1;
-	}
-}
-function toPathname(url) {
-	const queryIndex = url.indexOf("?");
-	return queryIndex === -1 ? url : url.slice(0, queryIndex);
-}
-/**
-* True when the URL is a source or dependency module rather than an app request.
-*
-* @internal exported for tests
-*/
-function isModuleRequest(url) {
-	if (url.startsWith("/api") || url.startsWith("/_serverFn")) return false;
-	const pathname = toPathname(url);
-	if (pathname.startsWith("/@")) return true;
-	if (pathname.includes("/node_modules/")) return true;
-	return SOURCE_MODULE_RE.test(pathname) || pathname.startsWith("/src/");
-}
 /**
 * Collects a request body as bytes.
 *
@@ -747,7 +906,7 @@ function readBody(req, res, limit) {
 }
 /** Logs one client-reported SPA route transition. */
 function logRouteEvent(data) {
-	const logString = (0, import_vite_plugin_hyperlog.formatRouteLog)(data.routeId || data.path || "", data.path || "", data.params ?? null, data.durationMs ? Number(data.durationMs) : null, Boolean(data.isPreload));
+	const logString = (0, import_vite_plugin_logger.formatRouteLog)(data.routeId || data.path || "", data.path || "", data.params ?? null, data.durationMs ? Number(data.durationMs) : null, Boolean(data.isPreload));
 	if (logString) console.log(logString);
 }
 /**
@@ -780,6 +939,10 @@ function requestLogger(config) {
 	const groupRepeats = config?.groupRepeats ?? true;
 	const repeatWindowMs = config?.repeatWindowMs ?? 1e3;
 	const detectGraphReevaluation = config?.detectGraphReevaluation ?? true;
+	const sf = config?.serverFunctions;
+	const serverFnConfig = Boolean(sf) && sf !== true ? sf : null;
+	const isServerFnLoggingEnabled = serverFnConfig !== null && serverFnConfig.enabled !== false;
+	const serverFnFormat = serverFnConfig?.format ?? "tree";
 	const exclusions = [
 		...DEFAULT_EXCLUDE_URLS,
 		...config?.excludeUrls || [],
@@ -795,7 +958,7 @@ function requestLogger(config) {
 			const flushRepeat = (key, entry) => {
 				repeats.delete(key);
 				if (entry.count <= 1) return;
-				const summary = (0, import_vite_plugin_hyperlog.formatLogEntry)(entry.url, entry.method, entry.status, entry.totalDurationMs, null, null, null, entry.count);
+				const summary = (0, import_vite_plugin_logger.formatLogEntry)(entry.url, entry.method, entry.status, entry.totalDurationMs, null, null, null, entry.count);
 				if (summary) console.log(summary);
 			};
 			server.httpServer?.on("close", () => {
@@ -806,8 +969,8 @@ function requestLogger(config) {
 			});
 			const detector = new GraphReevaluationDetector();
 			const observe = (url) => {
-				const report = detector.observe(isModuleRequest(url), url);
-				if (report) console.log((0, import_vite_plugin_hyperlog.formatGraphReevaluation)(report.distinctModules, report.repeatedRequests, report.windowMs));
+				const report = detector.observe((0, import_vite_plugin_logger.isModuleRequest)(url), url);
+				if (report) console.log((0, import_vite_plugin_logger.formatGraphReevaluation)(report.distinctModules, report.repeatedRequests, report.windowMs));
 			};
 			attachRouteEndpoint(server, logRouteEvent);
 			server.middlewares.use((req, res, next) => {
@@ -815,8 +978,45 @@ function requestLogger(config) {
 				const method = req.method || "GET";
 				if (detectGraphReevaluation) observe(url);
 				if (excludedMethods && excludedMethods.has(method.toUpperCase())) return next();
-				for (let i = 0; i < exclusions.length; i++) if (matchesExclusion(url, exclusions[i])) return next();
-				if (excludeModules && isModuleRequest(url)) return next();
+				if ((0, import_vite_plugin_logger.shouldExcludeRequest)(url, exclusions, excludeModules)) return next();
+				const serverFnDetails = isServerFnLoggingEnabled ? detectServerFunction(url, req.headers, serverFnConfig?.resolveServerFn, req) : null;
+				const bodyBytes = [];
+				let totalBodyLen = 0;
+				const MAX_CAPTURE_BYTES = 65536;
+				if (serverFnDetails && serverFnConfig?.logArgs !== false && method !== "GET") {
+					const origEmit = req.emit;
+					req.emit = function(event, ...args) {
+						if (event === "data" && totalBodyLen < MAX_CAPTURE_BYTES) {
+							const chunk = args[0];
+							const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+							bodyBytes.push(b);
+							totalBodyLen += b.length;
+						}
+						return origEmit.apply(this, [event, ...args]);
+					};
+				}
+				const resBytes = [];
+				let totalResLen = 0;
+				if (serverFnDetails && serverFnConfig?.logReturns !== false) {
+					const origWrite = res.write;
+					const origEnd = res.end;
+					res.write = function(chunk, ...args) {
+						if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
+							const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+							resBytes.push(b);
+							totalResLen += b.length;
+						}
+						return origWrite.apply(this, [chunk, ...args]);
+					};
+					res.end = function(chunk, ...args) {
+						if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
+							const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+							resBytes.push(b);
+							totalResLen += b.length;
+						}
+						return origEnd.apply(this, [chunk, ...args]);
+					};
+				}
 				const start = performance.now();
 				let logged = false;
 				const logIt = (aborted) => {
@@ -831,8 +1031,47 @@ function requestLogger(config) {
 					const location = res.getHeader("location");
 					const redirectLocation = location ? String(location) : null;
 					const routeName = resolveRoute ? resolveRoute(url) : null;
+					if (serverFnDetails) {
+						const parsedArgs = serverFnConfig?.logArgs !== false ? parseServerFnArgs(url, method, req.headers, bodyBytes) : void 0;
+						const parsedResult = serverFnConfig?.logReturns !== false ? parseServerFnResult(status, resBytes) : void 0;
+						const formattedArgs = parsedArgs !== void 0 ? formatPayload(parsedArgs, {
+							maxDepth: serverFnConfig?.maxDepth,
+							maxBreadth: serverFnConfig?.maxBreadth,
+							maxStringLength: serverFnConfig?.maxStringLength
+						}) : null;
+						const formattedResult = parsedResult !== void 0 ? formatPayload(parsedResult, {
+							maxDepth: serverFnConfig?.maxDepth,
+							maxBreadth: serverFnConfig?.maxBreadth,
+							maxStringLength: serverFnConfig?.maxStringLength
+						}) : null;
+						if (serverFnFormat === "tree") {
+							const requestLine = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
+							if (requestLine) console.log(requestLine);
+							const fnLine = (0, import_vite_plugin_logger.formatServerFnLog)(serverFnDetails.functionName, serverFnDetails.filePath, serverFnDetails.lineNumber ?? null, status, durationMs, formattedArgs, formattedResult, true, null);
+							if (fnLine) console.log(fnLine);
+						} else {
+							const fnLine = (0, import_vite_plugin_logger.formatServerFnLog)(serverFnDetails.functionName, serverFnDetails.filePath, serverFnDetails.lineNumber ?? null, status, durationMs, formattedArgs, formattedResult, false, null);
+							if (fnLine) console.log(fnLine);
+						}
+						try {
+							server.ws.send({
+								type: "custom",
+								event: "vite-plugin-hyperlog:server-fn",
+								data: {
+									name: serverFnDetails.functionName,
+									file: serverFnDetails.filePath,
+									status,
+									durationMs,
+									args: parsedArgs,
+									result: parsedResult,
+									browserConsole: Boolean(serverFnConfig?.browserConsole)
+								}
+							});
+						} catch {}
+						return;
+					}
 					if (!groupRepeats) {
-						const line = (0, import_vite_plugin_hyperlog.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
+						const line = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
 						if (line) console.log(line);
 						return;
 					}
@@ -846,7 +1085,7 @@ function requestLogger(config) {
 						existing.timer = setTimeout(() => flushRepeat(key, existing), repeatWindowMs);
 						return;
 					}
-					const line = (0, import_vite_plugin_hyperlog.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
+					const line = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
 					if (line) console.log(line);
 					const entry = {
 						timer: setTimeout(() => {}, 0),
@@ -880,7 +1119,7 @@ function requestLogger(config) {
 function browserLoggerScriptSrc(base) {
 	return `${base.endsWith("/") ? base : `${base}/`}@id/__x00__virtual:browser-logger`;
 }
-function browserLogger() {
+function browserLogger(config) {
 	const virtualModuleId = "virtual:browser-logger";
 	const resolvedVirtualModuleId = "\0" + virtualModuleId;
 	let base = "/";
@@ -888,14 +1127,18 @@ function browserLogger() {
 		name: "vite-plugin-browser-logger",
 		apply: "serve",
 		enforce: "pre",
-		configResolved(config) {
-			base = config.base;
+		configResolved(cfg) {
+			base = cfg.base;
 		},
 		resolveId(id) {
 			if (id === virtualModuleId || id === resolvedVirtualModuleId || id.endsWith(virtualModuleId)) return resolvedVirtualModuleId;
 		},
 		load(id) {
-			if (id === resolvedVirtualModuleId || id.endsWith(virtualModuleId)) return (0, import_vite_plugin_hyperlog.getBrowserLoggerScript)();
+			if (id === resolvedVirtualModuleId || id.endsWith(virtualModuleId)) {
+				const baseScript = (0, import_vite_plugin_logger.getBrowserLoggerScript)();
+				const uiScript = config?.serverFunctionUi !== false ? getServerFunctionOverlayScript() : "";
+				return baseScript + "\n" + uiScript;
+			}
 		},
 		transformIndexHtml() {
 			return [{
@@ -914,7 +1157,7 @@ function browserLogger() {
 				const entry = pendingBrowserLogs.get(key);
 				if (!entry) return;
 				pendingBrowserLogs.delete(key);
-				const logString = (0, import_vite_plugin_hyperlog.formatBrowserLog)(entry.type, entry.message, entry.caller, entry.count > 1 ? entry.count : null);
+				const logString = (0, import_vite_plugin_logger.formatBrowserLog)(entry.type, entry.message, entry.caller, entry.count > 1 ? entry.count : null);
 				if (logString) console.log(logString);
 			};
 			server.httpServer?.on("close", () => {
@@ -969,7 +1212,10 @@ function browserLogger() {
 * ```
 */
 function logger(config) {
-	return [requestLogger(config), browserLogger()];
+	const sf = config?.serverFunctions;
+	const sfConfig = Boolean(sf) && sf !== true ? sf : void 0;
+	const uiEnabled = config?.serverFunctions !== false && sfConfig?.ui !== false;
+	return [requestLogger(config), browserLogger({ serverFunctionUi: uiEnabled })];
 }
 /**
 * Factory helper for framework-specific adapters (React, Solid, Svelte, Vue)
@@ -983,7 +1229,10 @@ function createFrameworkLogger(defaultExclude) {
 		});
 	}
 	function log(config) {
-		return [reqLogger(config), browserLogger()];
+		const sf = config?.serverFunctions;
+		const sfConfig = Boolean(sf) && sf !== true ? sf : void 0;
+		const uiEnabled = config?.serverFunctions !== false && sfConfig?.ui !== false;
+		return [reqLogger(config), browserLogger({ serverFunctionUi: uiEnabled })];
 	}
 	return {
 		requestLogger: reqLogger,
@@ -991,4 +1240,4 @@ function createFrameworkLogger(defaultExclude) {
 	};
 }
 //#endregion
-export { import_vite_plugin_hyperlog as a, logger as c, require_vite_plugin_hyperlog as d, createFrameworkLogger as i, matchesExclusion as l, browserLogger as n, isModuleRequest as o, browserLoggerScriptSrc as r, logRouteEvent as s, attachRouteEndpoint as t, requestLogger as u };
+export { import_vite_plugin_logger as a, requestLogger as c, formatPayload as d, parseServerFnArgs as f, createFrameworkLogger as i, getServerFunctionOverlayScript as l, require_vite_plugin_logger as m, browserLogger as n, logRouteEvent as o, parseServerFnResult as p, browserLoggerScriptSrc as r, logger as s, attachRouteEndpoint as t, detectServerFunction as u };

@@ -69,6 +69,101 @@ fn is_module_path(path: &str) -> bool {
 }
 
 #[must_use]
+pub fn matches_exclusion(url: &str, pattern: &str) -> bool {
+  if !pattern.starts_with('/') {
+    return url.contains(pattern);
+  }
+
+  let pathname = match url.split_once('?') {
+    Some((p, _)) => p,
+    None => url,
+  };
+
+  // Fast-path: root-anchored prefix check (matches 95%+ of typical exclusions like "/node_modules/", "/api", "/favicon.ico")
+  if let Some(rest) = pathname.strip_prefix(pattern) {
+    if pattern.ends_with('/') || rest.is_empty() || rest.starts_with('/') {
+      return true;
+    }
+  }
+
+  let mut from = 0;
+  while let Some(slice) = pathname.get(from..) {
+    let Some(idx) = slice.find(pattern) else {
+      break;
+    };
+    let match_pos = from.saturating_add(idx);
+    let before = if match_pos == 0 {
+      None
+    } else {
+      pathname
+        .as_bytes()
+        .get(match_pos.saturating_sub(1))
+        .copied()
+    };
+    let after_pos = match_pos.saturating_add(pattern.len());
+    let after = pathname.as_bytes().get(after_pos).copied();
+
+    let starts_segment = before.is_none() || before == Some(b'/');
+    let ends_segment = pattern.ends_with('/') || after.is_none() || after == Some(b'/');
+
+    if starts_segment && ends_segment {
+      return true;
+    }
+
+    from = match_pos.saturating_add(1);
+    if from >= pathname.len() {
+      break;
+    }
+  }
+
+  false
+}
+
+#[must_use]
+pub fn is_module_request(url: &str) -> bool {
+  if url.starts_with("/api") || url.starts_with("/_serverFn") {
+    return false;
+  }
+  let pathname = match url.split_once('?') {
+    Some((p, _)) => p,
+    None => url,
+  };
+  if pathname.starts_with("/@") {
+    return true;
+  }
+  if pathname.contains("/node_modules/") {
+    return true;
+  }
+  if pathname.starts_with("/src/") {
+    return true;
+  }
+  if let Some((_, ext)) = pathname.rsplit_once('.') {
+    matches!(
+      ext,
+      "tsx" | "ts" | "jsx" | "js" | "mjs" | "cjs" | "css" | "vue" | "svelte"
+    )
+  } else {
+    false
+  }
+}
+
+#[must_use]
+pub fn should_exclude_request(url: &str, exclusions: &[String], exclude_modules: bool) -> bool {
+  // FAST-PATH: In Vite dev mode, >80% of incoming requests are module or asset requests
+  // (@vite/client, @react-refresh, /src/..., node_modules, .tsx, .css).
+  // Checking module status first avoids iterating over user exclusions for high-frequency dev assets.
+  if exclude_modules && is_module_request(url) {
+    return true;
+  }
+  for pattern in exclusions {
+    if matches_exclusion(url, pattern) {
+      return true;
+    }
+  }
+  false
+}
+
+#[must_use]
 #[expect(
   clippy::too_many_arguments,
   reason = "Matches JS formatLogEntry signature with 8 arguments"
@@ -361,5 +456,61 @@ mod tests {
     assert!(log.contains("[route]"));
     assert!(log.contains("/team-alpha/projects/123"));
     assert!(log.contains("[/$teamId/projects/$projectId]"));
+  }
+
+  #[test]
+  fn test_matches_exclusion() {
+    assert!(matches_exclusion("/api/v1/users", "/api"));
+    assert!(matches_exclusion("/api", "/api"));
+    assert!(!matches_exclusion("/api-key", "/api"));
+    assert!(!matches_exclusion("/dashboard/apiSettings", "/api"));
+    assert!(!matches_exclusion("/apiary", "/api"));
+    assert!(!matches_exclusion(
+      "/settings/node_modules-check",
+      "/node_modules/"
+    ));
+    assert!(matches_exclusion(
+      "/node_modules/.vite/deps/react.js",
+      "/node_modules/"
+    ));
+    assert!(matches_exclusion("/@id/virtual:browser-logger", "/@id/"));
+    assert!(matches_exclusion("/@vite/client", "/@vite"));
+    assert!(matches_exclusion("/src/App.tsx?import", "?import"));
+    assert!(!matches_exclusion("/src/main.tsx?t=123", "?import"));
+    assert!(matches_exclusion("/some/vite_ping", "vite_ping"));
+    assert!(matches_exclusion("/api?page=2", "/api"));
+    assert!(!matches_exclusion("/apiary?page=2", "/api"));
+  }
+
+  #[test]
+  fn test_is_module_request() {
+    assert!(is_module_request("/src/main.tsx"));
+    assert!(is_module_request("/src/App.tsx"));
+    assert!(is_module_request("/src/globals.css"));
+    assert!(is_module_request("/src/components/ui/button.tsx"));
+    assert!(is_module_request("/node_modules/.vite/deps/react.js"));
+    assert!(is_module_request("/@react-refresh"));
+    assert!(is_module_request("/@fs/Users/x/src/y.ts"));
+
+    assert!(!is_module_request("/"));
+    assert!(!is_module_request("/dashboard"));
+    assert!(!is_module_request("/login"));
+    assert!(!is_module_request("/api/v1/users"));
+    assert!(!is_module_request("/_serverFn/abc"));
+    assert!(!is_module_request("/api/config.js"));
+  }
+
+  #[test]
+  fn test_should_exclude_request() {
+    let exclusions = vec!["/api".to_string(), "?import".to_string()];
+    assert!(should_exclude_request("/api/users", &exclusions, false));
+    assert!(should_exclude_request(
+      "/src/App.tsx?import",
+      &exclusions,
+      false
+    ));
+    assert!(!should_exclude_request("/dashboard", &exclusions, false));
+    assert!(should_exclude_request("/src/main.tsx", &exclusions, true));
+    assert!(!should_exclude_request("/dashboard", &exclusions, true));
   }
 }
