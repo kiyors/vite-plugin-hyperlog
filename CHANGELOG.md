@@ -3,6 +3,34 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+### Added
+
+- **Native Server Function Logging & DevTools HUD**:
+  - Added native Rust `format_server_fn_log` supporting standalone `[server-fn]` logs and hierarchical tree formatting (`└─ ƒ action(args) ➜ result in Xms`) with latency-based color coding.
+  - Implemented cross-framework server action detection for TanStack Start, React 19 RSC `Next-Action`, and Astro `/_actions/`.
+  - Injected zero-bundle client DevTools HUD overlay via native Shadow DOM script `getServerFnOverlayScript()`.
+- **Native Exclusion Engine & Module Fast-Path**:
+  - Migrated URL exclusion matching and Vite module detection to native Rust (`should_exclude_request`, `matches_exclusion`, `is_module_request`).
+  - Added short-circuit fast-path for Vite module requests (>80% of dev traffic) and root-anchored prefix stripping to skip regex scanning.
+- **Native Route Matching & Fast AST Parsing**:
+  - Added native `match_route_path` in `oxc_routes.rs` for dynamic parameter matching without dynamic RegExp compilation.
+  - Added native `decode_server_fn` for URL-safe Base64 decoding with stack-buffer JSON key extraction.
+- **Enterprise Benchmark Suite & Profiler Tooling**:
+  - Added 3-table Master Performance Dashboard with uniform visual width alignment.
+  - Added CLI options: `--quick` / `-q` (~1.5s sub-second check), `--summary-only` / `-s`, and `--filter` / `-f <pattern>`.
+  - Added multi-format telemetry: GitHub Flavored Markdown table generation (`--markdown` / `--md`) and structured JSON telemetry export (`--json`).
+  - Added automated CI performance regression guard (`--ci` / `--fail-on-regression <pct>`).
+  - Added convenience scripts: `bench:quick`, `bench:summary`, `bench:ci`, `bench:markdown`, `bench:json`, and `bench:update`.
+
+### Security
+
+- Sanitized ANSI escape sequences (CSI, OSC, C1) across untrusted request URLs, caller locations, and payload previews to prevent terminal injection.
+- Stripped carriage return (`\r`) characters to prevent log forgery and status code spoofing.
+- Bounded Base64 URL token parsing to 4,096 bytes to protect against DoS memory exhaustion.
+- Enforced UTF-8 char boundary safe slicing for payload truncation.
+
 ## [0.2.1]
 
 First published release of the module-filtering and log-hardening work. The
