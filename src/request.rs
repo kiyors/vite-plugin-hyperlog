@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::fmt::Write;
+use std::sync::{LazyLock, RwLock};
 
 use crate::ansi;
 use crate::sanitize;
@@ -149,18 +151,77 @@ pub fn is_module_request(url: &str) -> bool {
 
 #[must_use]
 pub fn should_exclude_request(url: &str, exclusions: &[String], exclude_modules: bool) -> bool {
+  excluded_by_patterns(url, exclusions, exclude_modules)
+}
+
+#[must_use]
+fn excluded_by_patterns(url: &str, patterns: &[String], exclude_modules: bool) -> bool {
   // FAST-PATH: In Vite dev mode, >80% of incoming requests are module or asset requests
   // (@vite/client, @react-refresh, /src/..., node_modules, .tsx, .css).
   // Checking module status first avoids iterating over user exclusions for high-frequency dev assets.
   if exclude_modules && is_module_request(url) {
     return true;
   }
-  for pattern in exclusions {
-    if matches_exclusion(url, pattern) {
-      return true;
-    }
+  patterns
+    .iter()
+    .any(|pattern| matches_exclusion(url, pattern))
+}
+
+struct ExclusionConfig {
+  patterns: Vec<String>,
+  exclude_modules: bool,
+}
+
+/// Per-plugin-instance exclusion configs, registered once via
+/// `register_exclusion_config` and read on the hot path by `observe_request`.
+///
+/// Passing the JS `exclusions` array to the native side on every request
+/// allocated one `String` per pattern per request. The config rarely changes,
+/// so it is cached here and the hot path only fetches it.
+static EXCLUSION_CONFIGS: LazyLock<RwLock<HashMap<u32, ExclusionConfig>>> =
+  LazyLock::new(|| RwLock::new(HashMap::new()));
+
+pub fn register_exclusion_config(id: u32, patterns: Vec<String>, exclude_modules: bool) {
+  if let Ok(mut configs) = EXCLUSION_CONFIGS.write() {
+    configs.insert(
+      id,
+      ExclusionConfig {
+        patterns,
+        exclude_modules,
+      },
+    );
   }
-  false
+}
+
+/// One NAPI crossing per request instead of two: classifies the URL as a module
+/// request (for graph re-evaluation detection) and evaluates the plugin
+/// instance's cached exclusions in the same call.
+///
+/// Returns `(excluded, is_module)`. An unregistered `id` yields `excluded =
+/// false`, which keeps a stale/missing registration from silently logging
+/// everything; the plugin always registers before its middleware runs.
+#[must_use]
+pub fn observe_request(id: u32, url: &str) -> (bool, bool) {
+  let is_module = is_module_request(url);
+
+  let excluded = {
+    let guard = EXCLUSION_CONFIGS.read();
+    match guard {
+      Ok(configs) => match configs.get(&id) {
+        Some(config) => {
+          (config.exclude_modules && is_module)
+            || config
+              .patterns
+              .iter()
+              .any(|pattern| matches_exclusion(url, pattern))
+        }
+        None => false,
+      },
+      Err(_) => false,
+    }
+  };
+
+  (excluded, is_module)
 }
 
 #[must_use]
@@ -512,5 +573,74 @@ mod tests {
     assert!(!should_exclude_request("/dashboard", &exclusions, false));
     assert!(should_exclude_request("/src/main.tsx", &exclusions, true));
     assert!(!should_exclude_request("/dashboard", &exclusions, true));
+  }
+
+  #[test]
+  fn test_observe_request_excludes_via_cached_config() {
+    register_exclusion_config(0xA1, vec!["/api".to_string()], false);
+
+    let (excluded, is_module) = observe_request(0xA1, "/api/users");
+    assert!(excluded);
+    assert!(!is_module);
+
+    let (excluded, is_module) = observe_request(0xA1, "/dashboard");
+    assert!(!excluded);
+    assert!(!is_module);
+  }
+
+  #[test]
+  fn test_observe_request_exclude_modules_fast_path() {
+    register_exclusion_config(0xA2, Vec::new(), true);
+
+    let (excluded, is_module) = observe_request(0xA2, "/src/App.tsx");
+    assert!(is_module);
+    assert!(excluded);
+
+    let (excluded, is_module) = observe_request(0xA2, "/about");
+    assert!(!is_module);
+    assert!(!excluded);
+  }
+
+  #[test]
+  fn test_observe_request_unregistered_id_never_excludes() {
+    register_exclusion_config(0xA3, vec!["/api".to_string()], false);
+
+    let (excluded, _) = observe_request(0xA4, "/api/users");
+    assert!(!excluded, "unknown config id must not exclude anything");
+
+    // Re-registering an id replaces its config.
+    register_exclusion_config(0xA3, vec!["/dashboard".to_string()], false);
+    let (excluded, _) = observe_request(0xA3, "/api/users");
+    assert!(!excluded);
+    let (excluded, _) = observe_request(0xA3, "/dashboard");
+    assert!(excluded);
+  }
+
+  #[test]
+  fn test_observe_request_matches_exported_behavior() {
+    let exclusions = vec!["/api".to_string(), "?import".to_string()];
+    register_exclusion_config(0xA5, exclusions.clone(), false);
+    register_exclusion_config(0xA6, exclusions, true);
+
+    for url in [
+      "/api/users",
+      "/src/App.tsx?import",
+      "/team-alpha/projects/42",
+      "/node_modules/.vite/deps/react.js",
+    ] {
+      let (excluded, _) = observe_request(0xA5, url);
+      assert_eq!(
+        excluded,
+        should_exclude_request(url, &["/api".to_string(), "?import".to_string()], false),
+        "cached config must agree with the exported shouldExcludeRequest for {url}"
+      );
+
+      let (excluded, _) = observe_request(0xA6, url);
+      assert_eq!(
+        excluded,
+        should_exclude_request(url, &["/api".to_string(), "?import".to_string()], true),
+        "cached config must agree with the exported shouldExcludeRequest for {url}"
+      );
+    }
   }
 }

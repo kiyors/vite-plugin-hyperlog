@@ -180,6 +180,33 @@ pub fn should_exclude_request(url: String, exclusions: Vec<String>, exclude_modu
   request::should_exclude_request(&url, &exclusions, exclude_modules)
 }
 
+/// Registers a plugin instance's exclusion configuration under a unique id so
+/// the per-request hot path can evaluate it without marshalling the JS array
+/// across the boundary every time. Re-registering an id replaces its config.
+#[napi]
+pub fn register_exclusion_config(id: u32, exclusions: Vec<String>, exclude_modules: bool) {
+  request::register_exclusion_config(id, exclusions, exclude_modules);
+}
+
+#[napi(object)]
+pub struct RequestObservation {
+  pub excluded: bool,
+  pub is_module: bool,
+}
+
+/// Writes one NAPI call per request: classifies module requests for graph
+/// re-evaluation detection and evaluates the cached exclusion config in the
+/// same crossing. Returns `excluded = false` for unknown ids.
+#[napi]
+#[must_use]
+pub fn observe_request(id: u32, url: String) -> RequestObservation {
+  let (excluded, is_module) = request::observe_request(id, &url);
+  RequestObservation {
+    excluded,
+    is_module,
+  }
+}
+
 #[napi]
 #[must_use]
 pub fn match_route_path(path: String, routes: Vec<String>) -> Option<String> {

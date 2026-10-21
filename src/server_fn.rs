@@ -509,7 +509,7 @@ if (typeof window !== 'undefined' && import.meta.hot) {
             </div>
           </div>
           <div class="search-bar">
-            <input class="search-input" id="filter-input" placeholder="Filter functions or files..." value="${activeFilter}" />
+            <input class="search-input" id="filter-input" placeholder="Filter functions or files..." />
           </div>
           <div class="log-list">
             ${filteredLogs.length === 0 ? '<div class="empty-state">No server function calls yet. Trigger a server action in your app!</div>' : ''}
@@ -570,6 +570,10 @@ if (typeof window !== 'undefined' && import.meta.hot) {
 
       const filterInput = root.querySelector("#filter-input");
       if (filterInput) {
+        // Assigned through the DOM API instead of a `value="${activeFilter}"`
+        // attribute: the filter text is untrusted and interpolating it into
+        // HTML would allow an attribute breakout to inject event handlers.
+        filterInput.value = activeFilter;
         filterInput.addEventListener("input", (e) => {
           activeFilter = e.target.value;
           render();
