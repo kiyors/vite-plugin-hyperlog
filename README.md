@@ -80,7 +80,32 @@ requestLogger({
   // Map a request URL to a route pattern for display, e.g. "/$teamId/issues".
   // Only used when you want to supply your own patterns.
   resolveRoute: (url) => (url.startsWith("/dashboard") ? "/dashboard/*" : undefined),
+
+  // Colour policy is automatic: colours are stripped when output is piped,
+  // captured, or when NO_COLOR is set, and forced on with FORCE_COLOR=1.
+  // Set to false to force plain (ANSI-free) output even on a real terminal.
+  // Default: true (auto)
+  stripColors: true,
+
+  // Emit one compact NDJSON row per log event instead of pretty lines —
+  // machine-readable terminal output for piping into jq / log tools:
+  //   pnpm dev 2>&1 | jq 'select(.status >= 500)'
+  // Default: false
+  json: false,
+
+  // Rolling latency footer printed once per window while traffic is flowing
+  // (silent while the dev server is idle): `└─ 10s p50 1.2ms · p95 9.4ms · p99
+  // 31ms · 87 reqs`. Pass an object to tune the window:
+  // summaryStats: { windowMs: 5000, minSamples: 10 }. Default: true
+  summaryStats: true,
 });
+```
+
+With `json: true` the same events look like this:
+
+```bash
+{"kind":"request","ts":1714300000000,"url":"/dashboard","method":"GET","status":200,"durationMs":12.4}
+{"kind":"server-fn","ts":1714300000100,"name":"getAuthSession","file":"routes/__root.tsx","status":200,"durationMs":3.1,"args":{},"result":{"user":"Gaurav"}}
 ```
 
 ### Repeated Requests & Duplicate Graph Loads
@@ -113,7 +138,7 @@ For TanStack applications, import from `vite-plugin-hyperlog/tanstack`. It inclu
 - **Server Function Decoding & Formatting**: Automatically decodes `/_serverFn` base64 endpoints to display human-readable function names, caller files, and execution durations with hierarchical tree formatting (`└─ ƒ action(args) ➜ result in Xms`), color-coded by latency thresholds and flagging errors with `❌`.
 - **Client DevTools HUD Overlay**: Universal zero-dependency Shadow DOM overlay injected into dev clients via `getServerFnOverlayScript` for real-time latency and error inspection without style collisions.
 - **Duplicate Batching**: Groups and debounces consecutive duplicate server function calls (e.g. `(x5)`) during component mounts and revalidations.
-- **Route Pattern Matching**: Powered by an ultra-fast, native Rust AST parser to extract route patterns and types from `src/routeTree.gen.ts` with 0 regex fragility, displaying parameterized route patterns (e.g. `/$teamId/channels/$channelId`) alongside the requested URL.
+- **Route Pattern Matching**: Powered by an ultra-fast native Rust scanner (zero regex fragility, hand-rolled token scan) to extract route patterns and types from `src/routeTree.gen.ts`, displaying parameterized route patterns (e.g. `/$teamId/channels/$channelId`) alongside the requested URL.
 - **Module Noise Filtering**: Automatically filters out internal Vite module compilation noise (`/node_modules/`, `/@vite`, `.tsx`/`.ts` compilation requests, and `?tsr-split=component`).
 
 ```typescript
@@ -132,11 +157,19 @@ export default defineConfig({
       matchRouteTree: true,
       // Group and debounce repeated server functions (default: true)
       groupServerFn: true,
+      // NDJSON rows instead of pretty lines, and/or a rolling p50/p95/p99
+      // footer — same semantics as the base plugin (inherited defaults).
+      json: false,
+      summaryStats: true,
     }),
     browserLogger(),
   ],
 });
 ```
+
+> **Note**: `summaryStats` is on by default for every adapter; the browser
+> logger inherits `json` / `stripColors` from the config you pass to
+> `logger()` / `tanstackLogger()` so the whole stream stays consistent.
 
 #### Client-Side SPA Route Logger
 
@@ -181,7 +214,7 @@ not only on `createBrowserRouter`.
 `browserLogger` captures client-side events via WebSockets and formats them natively with Rust:
 
 - **Clickable Source Callers**: Automatically resolves caller locations (e.g. `(src/components/Login.tsx:42)`) so you can cmd-click directly to your code in modern terminals (VS Code, iTerm, Warp, Ghostty).
-- **ANSI Syntax Highlighting**: Powered by a zero-copy, pure native Rust JSON tokenizer to colorize objects logged from the browser with syntax coloring for keys, strings, numbers, booleans, and nulls.
+- **ANSI Syntax Highlighting**: Powered by a zero-dependency, pure-native Rust JSON scanner to colorize objects logged from the browser with syntax coloring for keys, strings, numbers, booleans, and nulls.
 - **Timer Support**: Supports `console.time('label')` and `console.timeEnd('label')` to track client-side performance.
 - **Intelligent Stack Trace Cleaning & Sourcemap Remapping**: Powered by a custom zero-dependency VLQ sourcemap decoder to parse browser error frames, highlight user application frames (`➜ src/lib/api.ts:25:11 in fetchUser`), dim dependency noise, and remap positions to original TypeScript source files.
 - **Flood Protection**: Rapid repetitive logs (e.g. from render loops or scroll listeners) are debounced and collapsed with a repeat counter (`(x5)`).
@@ -203,14 +236,19 @@ not only on `createBrowserRouter`.
 
 ### Binary Footprint
 
-By eliminating heavy transitive dependencies (`serde`, `regex`, `chrono`, `yansi`, `oxc_parser`, `oxc_sourcemap`) and replacing them with hand-optimized pure Rust zero-allocation algorithms, the compiled binary footprint was reduced by **97.6%**:
+By eliminating heavy transitive dependencies (`serde`, `regex`, `chrono`, `yansi`, `oxc_parser`, `oxc_sourcemap`) and replacing them with hand-optimized pure Rust zero-allocation algorithms, the compiled binary footprint was reduced by **~97%**:
 
-| Architecture                       | Previous Size | Current Size | Reduction  |
-| :--------------------------------- | :------------ | :----------- | :--------- |
-| **macOS ARM64** (`darwin-arm64`)   | `15.0 MB`     | **`363 KB`** | **-97.6%** |
-| **macOS x64** (`darwin-x64`)       | `15.2 MB`     | **`378 KB`** | **-97.5%** |
-| **Linux x64** (`linux-x64-gnu`)    | `15.8 MB`     | **`392 KB`** | **-97.5%** |
-| **Windows x64** (`win32-x64-msvc`) | `14.9 MB`     | **`354 KB`** | **-97.6%** |
+| Architecture                       | Previous Size | Current Size   | Reduction  |
+| :--------------------------------- | :------------ | :------------- | :--------- |
+| **macOS ARM64** (`darwin-arm64`)   | `15.0 MB`     | **`460 KB`**¹  | **-97.0%** |
+| **macOS x64** (`darwin-x64`)       | `15.2 MB`     | **`≈ 480 KB`** | **-96.9%** |
+| **Linux x64** (`linux-x64-gnu`)    | `15.8 MB`     | **`≈ 500 KB`** | **-96.9%** |
+| **Windows x64** (`win32-x64-msvc`) | `14.9 MB`     | **`≈ 455 KB`** | **-97.0%** |
+
+> ¹ Measured with the shipped `opt-level = 3` speed profile on darwin-arm64 (470,896 bytes).
+> The other columns are estimates from the same build profile across platforms; exact sizes are
+> recorded by the release CI when platform artifacts are built. The remaining rows use the same
+> release profile and land within a few percent of the measured macOS ARM64 figure.
 
 ---
 
@@ -221,18 +259,18 @@ By eliminating heavy transitive dependencies (`serde`, `regex`, `chrono`, `yansi
 
 | Function / API                 | Workload Description                   | Throughput              | Avg Latency | P99 Latency | CPU per Call |
 | :----------------------------- | :------------------------------------- | :---------------------- | :---------- | :---------- | :----------- |
-| **`shouldExcludeRequest`**     | Vite module & static asset filtering   | **`2,480,223 ops/sec`** | `0.403 µs`  | `0.410 µs`  | `0.40 µs`    |
-| **`getBrowserLoggerScript`**   | Vite client injector script            | **`2,414,486 ops/sec`** | `0.412 µs`  | `0.415 µs`  | `0.41 µs`    |
-| **`formatRouteLog`**           | Navigations & preloads (4-variant)     | **`1,682,684 ops/sec`** | `0.594 µs`  | `0.596 µs`  | `0.59 µs`    |
-| **`decodeServerFn`**           | URL-safe Base64 + stack JSON extractor | **`1,543,643 ops/sec`** | `0.648 µs`  | `0.658 µs`  | `0.65 µs`    |
-| **`formatLogEntry`**           | 6-path mixed HTTP requests             | **`1,212,282 ops/sec`** | `0.825 µs`  | `0.827 µs`  | `0.82 µs`    |
-| **`formatBrowserLog`**         | 6-type mixed browser telemetry         | **`1,111,462 ops/sec`** | `0.900 µs`  | `0.902 µs`  | `0.90 µs`    |
-| **`remapSourcePosition`**      | Zero-copy VLQ sourcemap token lookup   | **`1,075,881 ops/sec`** | `0.929 µs`  | `0.930 µs`  | `0.93 µs`    |
-| **`matchRoutePath`**           | Native dynamic parameter matcher       | **`1,019,244 ops/sec`** | `0.981 µs`  | `0.988 µs`  | `0.98 µs`    |
-| **`formatServerFnLog`**        | Hierarchical tree & standalone logs    | **`892,517 ops/sec`**   | `1.120 µs`  | `1.131 µs`  | `1.12 µs`    |
-| **`remapStackTrace`**          | 5-frame minified stack remapping       | **`634,381 ops/sec`**   | `1.577 µs`  | `1.594 µs`  | `1.58 µs`    |
-| **`parseRouteTreeAst`**        | TanStack 15-route tree AST parsing     | **`274,749 trees/sec`** | `3.640 µs`  | `3.641 µs`  | `3.64 µs`    |
-| **`getServerFnOverlayScript`** | Client Shadow DOM DevTools HUD script  | **`201,782 ops/sec`**   | `4.956 µs`  | `4.961 µs`  | `4.96 µs`    |
+| **`shouldExcludeRequest`**     | Vite module & static asset filtering   | **`3,161,111 ops/sec`** | `0.316 µs`  | `0.319 µs`  | `0.32 µs`    |
+| **`getBrowserLoggerScript`**   | Vite client injector script            | **`2,456,569 ops/sec`** | `0.407 µs`  | `0.413 µs`  | `0.41 µs`    |
+| **`formatRouteLog`**           | Navigations & preloads (4-variant)     | **`2,366,792 ops/sec`** | `0.423 µs`  | `0.428 µs`  | `0.42 µs`    |
+| **`decodeServerFn`**           | URL-safe Base64 + stack JSON extractor | **`1,844,242 ops/sec`** | `0.542 µs`  | `0.566 µs`  | `0.54 µs`    |
+| **`formatLogEntry`**           | 6-path mixed HTTP requests             | **`1,806,492 ops/sec`** | `0.554 µs`  | `0.558 µs`  | `0.55 µs`    |
+| **`formatBrowserLog`**         | 6-type mixed browser telemetry         | **`1,733,763 ops/sec`** | `0.577 µs`  | `0.584 µs`  | `0.58 µs`    |
+| **`remapSourcePosition`**      | Zero-copy VLQ sourcemap token lookup   | **`1,313,267 ops/sec`** | `0.762 µs`  | `0.770 µs`  | `0.76 µs`    |
+| **`matchRoutePath`**           | Native dynamic parameter matcher       | **`1,589,916 ops/sec`** | `0.629 µs`  | `0.635 µs`  | `0.63 µs`    |
+| **`formatServerFnLog`**        | Hierarchical tree & standalone logs    | **`1,246,820 ops/sec`** | `0.802 µs`  | `0.810 µs`  | `0.80 µs`    |
+| **`remapStackTrace`**          | 5-frame minified stack remapping       | **`985,248 ops/sec`**   | `1.015 µs`  | `1.031 µs`  | `1.02 µs`    |
+| **`parseRouteTreeAst`**        | TanStack 15-route tree route scanning  | **`403,818 trees/sec`** | `2.476 µs`  | `2.482 µs`  | `2.48 µs`    |
+| **`getServerFnOverlayScript`** | Client Shadow DOM DevTools HUD script  | **`192,240 ops/sec`**   | `5.202 µs`  | `5.248 µs`  | `5.20 µs`    |
 
 ---
 
@@ -251,9 +289,9 @@ Request Distribution:
   └── Static Assets / Fonts (3%)       [■·················]   15,000 assets
 ```
 
-- **Effective Throughput**: **`1,404,999 requests / sec`**
-- **Average Latency**: **`0.712 µs`** per logged event
-- **Total Time**: `355.8 ms` for all 500,000 requests
+- **Effective Throughput**: **`2,069,081 requests / sec`**
+- **Average Latency**: **`0.483 µs`** per logged event
+- **Total Time**: `241.7 ms` for all 500,000 requests
 - **Memory RSS Growth**: `< 1.8 MB` during burst
 
 ---
@@ -262,13 +300,13 @@ Request Distribution:
 
 | Real-World Scenario                     | Workload Scale                             | Throughput                | Latency    |
 | :-------------------------------------- | :----------------------------------------- | :------------------------ | :--------- |
-| **Enterprise 60+ Route Tree AST**       | 60+ routes, nested layouts, search schemas | **`33,045 trees/sec`**    | `30.26 µs` |
-| **Production 14-Frame Stack Remapping** | Vite + React + TanStack minified bundle    | **`183,116 stacks/sec`**  | `5.46 µs`  |
-| **High-Concurrency Interleaved Burst**  | 100 concurrent clients × 200 requests      | **`1,326,382 ops/sec`**   | `0.75 µs`  |
-| **Heavy JSON Syntax Colorizer**         | 5.7 KB nested object/array payloads        | **`32,592 payloads/sec`** | `30.68 µs` |
-| **Adversarial 100KB Message Payload**   | 100 KB giant JSON strings                  | **`4,796 payloads/sec`**  | `208.5 µs` |
-| **Ultra-Deep 100-Frame Stack Trace**    | 100-frame recursion stack traces           | **`47,497 stacks/sec`**   | `21.05 µs` |
-| **Rapid-Fire Cached Time Formatting**   | 2,000,000 cached millisecond timestamps    | **`2,119,664 ops/sec`**   | `0.47 µs`  |
+| **Enterprise 60+ Route Tree Scanner**   | 60+ routes, nested layouts, search schemas | **`41,650 trees/sec`**    | `24.01 µs` |
+| **Production 14-Frame Stack Remapping** | Vite + React + TanStack minified bundle    | **`286,576 stacks/sec`**  | `3.49 µs`  |
+| **High-Concurrency Interleaved Burst**  | 100 concurrent clients × 1,000 requests    | **`1,828,499 ops/sec`**   | `0.55 µs`  |
+| **Heavy JSON Syntax Colorizer**         | 5.7 KB nested object/array payloads        | **`56,311 payloads/sec`** | `17.76 µs` |
+| **Adversarial 100KB Message Payload**   | 100 KB giant JSON strings                  | **`10,455 payloads/sec`** | `95.6 µs`  |
+| **Ultra-Deep 100-Frame Stack Trace**    | 100-frame recursion stack traces           | **`79,446 stacks/sec`**   | `12.59 µs` |
+| **Rapid-Fire Cached Time Formatting**   | 2,000,000 cached millisecond timestamps    | **`2,598,656 ops/sec`**   | `0.39 µs`  |
 
 ---
 
@@ -277,13 +315,13 @@ Request Distribution:
 ```text
 ┌─ Hardware Resource Consumption Matrix ───────────────────────────────────┐
   CPU Metrics:
-    User execution time:     29,818.5 ms
-    System kernel time:      57.3 ms
-    Total CPU consumed:      29,875.9 ms
+    User execution time:     26,616.5 ms
+    System kernel time:      102.0 ms
+    Total CPU consumed:      26,718.5 ms
     Execution model:         Single-core thread-safe NAPI fast-path
 
   RAM / Memory Metrics:
-    Resident Set Size (RSS): 68.94 MB
+    Resident Set Size (RSS): 68.53 MB
     V8 Heap Used / Total:    5.00 MB / 9.91 MB
     Native External Memory:  2.18 MB
     ArrayBuffers Allocated:  137.5 KB
@@ -296,8 +334,8 @@ Request Distribution:
 
   Suite Throughput Metrics:
     Total Benchmark Calls:   22,305,000 requests executed
-    Suite Execution Time:    29.92s
-    Correctness Status:      ✓ 78/78 Passed (100% verified)
+    Suite Execution Time:    26.79s
+    Correctness Status:      ✓ 80/80 Passed (100% verified)
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -336,6 +374,12 @@ pnpm bench -f "serverFn"
 # Re-benchmark and save current metrics as the reference baseline
 pnpm bench:update
 ```
+
+> **Note on baselines**: the checked-in `scripts/benchmark-baseline.json` stores the best
+> observed throughput per benchmark (merged across multiple runs), so it represents the
+> binary's capability rather than a worst-case snapshot. Run `pnpm bench` / `pnpm bench:ci`
+> on an **idle** machine — heavy background work (compilers, builds) is measured as
+> throughput drop by the regression guard even when nothing changed.
 
 ---
 

@@ -3,6 +3,34 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] (unreleased)
+
+### Added
+
+- **Config-time exclusion engine**: platforms now register their exclusion configuration once per plugin instance with the new native `registerExclusionConfig(id, exclusions, excludeModules)`, instead of marshalling the JS array across the NAPI boundary on every request.
+- **Combined request observation**: new native `observeRequest(id, url)` returns `RequestObservation { excluded, isModule }`, classifying module requests (for graph re-evaluation detection) and evaluating the cached exclusions in a single native crossing per request. Both the base and TanStack plugins use it on the request hot path.
+- **NDJSON output mode (`json: true`)**: every adapter can emit one compact structured JSON row per event (`{"kind":"request",...}`, `server-fn`, `route`, `browser`, `graph`) instead of pretty lines, so the dev stream can be piped straight into `jq` or a log collector. The unified `logger()` / `tanstackLogger()` wrappers propagate the flag to the browser logger as well.
+- **Rolling latency footer (`summaryStats`, default on)**: while traffic flows, a once-per-window footer prints `└─ 10s p50 1.2ms · p95 9.4ms · p99 31ms · 87 reqs` (nearest-rank quantiles over the window, configurable via `summaryStats: { windowMs, minSamples }`, silent while idle).
+- **Automatic colour policy (+ `stripColors`)**: colours are stripped automatically when stdout is not a TTY, when `NO_COLOR` is set, or with `FORCE_COLOR=0`; `FORCE_COLOR` forces colours back on for captured logs. `stripColors: false` forces plain output even on a terminal.
+- **Browser-log rate budget**: WS-delivered browser logs are capped at 400 printed rows per rolling second; anything beyond is dropped until the next window and reported as a single `[hyperlog] N browser log rows suppressed (rate limit)` notice, so a runaway `console.log` loop can no longer pin the dev-server CPU or flood the terminal.
+
+### Performance
+
+- **Release profile speed-up**: compiled the native extension with `opt-level = 3` instead of `opt-level = "z"`. Formatting benchmarks improved by roughly 30–50% (e.g. `formatLogEntry` 1.21M → 1.81M ops/sec, 500k-request simulated traffic 1.40M → 2.07M req/sec), at the cost of ~100 KB of binary size (still ~97% smaller than pre-optimization builds).
+- **Hoisted per-request config parsing** in the TanStack adapter: server-function configuration is now resolved once at plugin creation instead of on every middleware hit.
+- **Microtask-batched terminal writes**: consecutive log lines within one event-loop tick are coalesced into a single `process.stdout.write` instead of one synchronous write per `console.log`, cutting syscalls sharply on busy pages while preserving in-tick ordering.
+- **Raw chunk capture**: server-function request/response bodies are captured without re-encoding each chunk, avoiding extra `Buffer` allocations in the capture path.
+- **Passive body capture**: request bodies are observed with a plain `"data"` listener (the middleware-standard pattern) instead of monkey-patching `req.emit` with an array-spreading wrapper on every request.
+- **Best-observed baseline**: the checked-in `scripts/benchmark-baseline.json` is refreshed from the best observation per benchmark across multiple full-suite runs, so transient background load no longer skews the CI regression guard's reference point. Runtime benchmarks should still be executed on an idle machine.
+
+### Fixed
+
+- **Route-endpoint origin guard**: `POST /__hyperlog/route` now rejects browsers whose `Origin` does not match the receiving `Host` (403, before any body read), closing cross-origin route forgery / DNS-rebinding log pollution; header-less non-browser clients (curl, IDE tools) are unaffected.
+- **UTF-8 chunk boundaries in server-function capture**: request/response chunks are stored in their original form (`Buffer` or pre-decoded string) and decoded once at capture end. Re-encoding each chunk in isolation (`Buffer.from(String(chunk))`) silently corrupted multi-byte characters split across chunk boundaries.
+- **DevTools HUD input hardening**: the overlay's URL filter value is assigned through the DOM API (`filterInput.value`) instead of being interpolated into an HTML `value="..."` attribute, closing an attribute-breakout injection when re-rendering with untrusted filter text.
+- **Shared adapter plumbing**: body capture, server-function rendering/telemetry, the route reporter, and the output pipeline now live in one shared implementation used by both adapters; this removes drifting duplicates and restores 499-aborted-status parity with the base plugin in the TanStack adapter.
+- **README accuracy**: corrected the route-pattern matcher and JSON colorizer descriptions (hand-rolled native token scanning, not an AST parser / SIMD base64 / zero-copy claims) and refreshed all benchmark tables from the re-baselined suite.
+
 ## [0.3.0]
 
 ### Added
