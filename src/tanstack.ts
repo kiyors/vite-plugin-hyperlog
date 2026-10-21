@@ -5,23 +5,28 @@ import type { Plugin } from "vite";
 
 import {
   formatLogEntry,
-  formatRouteLog,
-  formatServerFnLog,
+  observeRequest,
   matchRoutePath,
   parseRouteTreeAst,
-  shouldExcludeRequest,
+  registerExclusionConfig,
 } from "../index.js";
+import { createLogSink, createSummaryTracker, formatSummaryLine, type SummaryOptions } from "./log-sink";
 import {
+  allocateExclusionConfigId,
   attachRouteEndpoint,
   browserLogger,
-  detectServerFunction,
-  formatPayload,
-  parseServerFnArgs,
-  parseServerFnResult,
+  DEFAULT_EXCLUDE_URLS,
+  routeEventSinkHandler,
   type RequestLoggerConfig,
-  type RoutePayload,
   type ServerFunctionConfig,
 } from "./plugin";
+import {
+  captureServerFnBodies,
+  detectServerFunction,
+  logServerFnCall,
+  parseServerFnArgs,
+  parseServerFnResult,
+} from "./server-fn-utils";
 
 export interface TanStackLoggerConfig extends RequestLoggerConfig {
   /**
@@ -148,17 +153,7 @@ export function parseRouteTreeContent(content: string): RouteMatcher[] {
   return matchers;
 }
 
-const DEFAULT_EXCLUDE_URLS = [
-  "?import",
-  "vite_ping",
-  "@fs",
-  "/@vite",
-  "/@react-refresh",
-  "node_modules",
-  "/.well-known",
-  "/__hyperlog",
-];
-const TANSTACK_EXCLUDE_PATTERNS = ["?tsr-split", "virtual:tanstack-start", "/@id/virtual:", "/@id/", "/@fs/"];
+const TANSTACK_EXCLUDE_PATTERNS = ["?tsr-split", "virtual:tanstack-start", "/@id/virtual:", "/@id/"];
 
 interface PendingServerFn {
   timer: ReturnType<typeof setTimeout>;
@@ -184,6 +179,20 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
   const pendingServerFns = new Map<string, PendingServerFn>();
   const MAX_PENDING_SERVER_FNS = 250;
 
+  const sf = config?.serverFunctions;
+  // SAFETY: sf is validated to be a configuration object and not a boolean
+  const serverFnConfig = Boolean(sf) && sf !== true ? (sf as ServerFunctionConfig) : null;
+  const isServerFnLoggingEnabled = serverFnConfig !== null && serverFnConfig.enabled !== false;
+  const serverFnFormat = serverFnConfig?.format ?? "tree";
+
+  const jsonMode = config?.json === true;
+  const summaryConfig = config?.summaryStats;
+  const summaryEnabled = summaryConfig !== false;
+  // SAFETY: with `true` and `false` excluded, a defined value is necessarily the object form.
+  const summaryOptions: SummaryOptions =
+    summaryEnabled && summaryConfig !== true ? ((summaryConfig ?? {}) as SummaryOptions) : {};
+  const summaryWindowMs = Math.max(200, summaryOptions.windowMs ?? 10_000);
+
   const exclusions = [
     ...DEFAULT_EXCLUDE_URLS,
     ...(config?.excludeUrls || []),
@@ -194,26 +203,11 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
     ? new Set(config.excludeReqType.map((type) => type.toUpperCase()))
     : null;
 
-  const flushServerFn = (key: string) => {
-    const entry = pendingServerFns.get(key);
-    if (!entry) return;
-    pendingServerFns.delete(key);
-
-    const avgDuration = entry.totalDuration / entry.count;
-    const logString = formatLogEntry(
-      entry.url,
-      entry.method,
-      entry.status,
-      avgDuration,
-      entry.contentLength,
-      entry.redirectLocation,
-      entry.routeName,
-      entry.count > 1 ? entry.count : null,
-    );
-    if (logString) {
-      console.log(logString);
-    }
-  };
+  // Registered once so the per-request hot path evaluates exclusions natively
+  // via the shared `observeRequest` crossing instead of marshalling this array
+  // across the NAPI boundary on every request.
+  const exclusionConfigId = allocateExclusionConfigId();
+  registerExclusionConfig(exclusionConfigId, allExclusions, excludeModules);
 
   const resolveRouteName = (url: string): string | null => {
     if (config?.resolveRoute) {
@@ -251,6 +245,42 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
     name: "vite-plugin-request-logging-tanstack",
     apply: "serve",
     configureServer(server) {
+      // Shared output pipeline: color policy (TTY/NO_COLOR), microtask-batched
+      // stdout, NDJSON mode, and the rolling latency summary all hang off this.
+      const sink = createLogSink({ json: jsonMode, stripColors: config?.stripColors });
+      const summary = summaryEnabled ? createSummaryTracker(summaryOptions) : null;
+      let summaryFlushQueued = false;
+
+      const flushServerFn = (key: string) => {
+        const entry = pendingServerFns.get(key);
+        if (!entry) return;
+        pendingServerFns.delete(key);
+
+        const avgDuration = entry.totalDuration / entry.count;
+        const logString = formatLogEntry(
+          entry.url,
+          entry.method,
+          entry.status,
+          avgDuration,
+          entry.contentLength,
+          entry.redirectLocation,
+          entry.routeName,
+          entry.count > 1 ? entry.count : null,
+        );
+        sink.print(logString, {
+          kind: "request",
+          ts: Date.now(),
+          url: entry.url,
+          method: entry.method,
+          status: entry.status,
+          durationMs: avgDuration,
+          contentLength: entry.contentLength,
+          location: entry.redirectLocation,
+          route: entry.routeName,
+          repeat: entry.count > 1 ? entry.count : null,
+        });
+      };
+
       // Load routeTree.gen.ts if available
       const treeRelativePath = config?.routeTreePath || "src/routeTree.gen.ts";
       const treeAbsolutePath = path.resolve(server.config.root, treeRelativePath);
@@ -283,21 +313,10 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
           clearTimeout(entry.timer);
           flushServerFn(key);
         }
+        sink.flush();
       });
 
-      const handleTanStackRoute = (data: RoutePayload) => {
-        const { routeId, path, params, durationMs, isPreload } = data;
-        const logString = formatRouteLog(
-          routeId || path,
-          path,
-          params ?? null,
-          durationMs ? Number(durationMs) : null,
-          Boolean(isPreload),
-        );
-        if (logString) {
-          console.log(logString);
-        }
-      };
+      const handleTanStackRoute = routeEventSinkHandler(sink);
 
       server.ws.on("vite-plugin-hyperlog:tanstack-route", handleTanStackRoute);
 
@@ -307,79 +326,69 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
         const url = req.originalUrl || "";
         const method = req.method || "GET";
 
+        // Single native crossing that evaluates the registered exclusion config.
+        const observation = observeRequest(exclusionConfigId, url);
+
         if (excludedMethods && excludedMethods.has(method.toUpperCase())) {
           return next();
         }
 
-        if (shouldExcludeRequest(url, allExclusions, excludeModules)) {
+        if (observation.excluded) {
           return next();
         }
-
-        const sf = config?.serverFunctions;
-        // SAFETY: sf is validated to be a configuration object and not a boolean
-        const serverFnConfig = Boolean(sf) && sf !== true ? (sf as ServerFunctionConfig) : null;
-        const isServerFnLoggingEnabled = serverFnConfig !== null && serverFnConfig.enabled !== false;
-        const serverFnFormat = serverFnConfig?.format ?? "tree";
 
         const serverFnDetails = isServerFnLoggingEnabled
           ? detectServerFunction(url, req.headers, serverFnConfig?.resolveServerFn, req)
           : null;
 
-        const bodyBytes: Buffer[] = [];
-        let totalBodyLen = 0;
-        const MAX_CAPTURE_BYTES = 64 * 1024;
-
-        if (serverFnDetails && serverFnConfig?.logArgs !== false && method !== "GET") {
-          const origEmit = req.emit;
-          req.emit = function (event: string, ...args: any[]) {
-            if (event === "data" && totalBodyLen < MAX_CAPTURE_BYTES) {
-              const chunk = args[0];
-              const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-              bodyBytes.push(b);
-              totalBodyLen += b.length;
-            }
-            return origEmit.apply(this, [event, ...args]);
-          };
-        }
-
-        const resBytes: Buffer[] = [];
-        let totalResLen = 0;
-
-        if (serverFnDetails && serverFnConfig?.logReturns !== false) {
-          const origWrite = res.write;
-          const origEnd = res.end;
-
-          res.write = function (chunk: any, ...args: any[]) {
-            if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
-              const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-              resBytes.push(b);
-              totalResLen += b.length;
-            }
-            return origWrite.apply(this, [chunk, ...args]);
-          };
-
-          res.end = function (chunk: any, ...args: any[]) {
-            if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
-              const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-              resBytes.push(b);
-              totalResLen += b.length;
-            }
-            return origEnd.apply(this, [chunk, ...args]);
-          };
-        }
+        // Shared capture plumbing (request listener + response write/end
+        // patches, byte caps) — one copy for every adapter.
+        const { bodyBytes, resBytes } = captureServerFnBodies(
+          req,
+          res,
+          serverFnDetails !== null && serverFnConfig?.logArgs !== false && method !== "GET",
+          serverFnDetails !== null && serverFnConfig?.logReturns !== false,
+        );
 
         const start = performance.now();
         let logged = false;
 
-        const logIt = () => {
+        const logIt = (aborted: boolean) => {
           if (logged) return;
           logged = true;
 
-          res.removeListener("finish", logIt);
-          res.removeListener("close", logIt);
+          res.removeListener("finish", onFinish);
+          res.removeListener("close", onClose);
 
           const durationMs = performance.now() - start;
-          const status = res.statusCode;
+          // An aborted request never reaches `finish`, so statusCode is still
+          // the default 200. Report 499 like the base plugin so a dropped
+          // request is not mistaken for a successful one.
+          const abortedRequest = aborted && !res.writableEnded;
+          const status = abortedRequest ? 499 : res.statusCode;
+
+          // Rolling latency footer: every completed non-excluded request feeds
+          // the sample; the footer is emitted from a later microtask so it
+          // renders below this request's own lines.
+          if (summary) {
+            summary.record(durationMs);
+            if (!summaryFlushQueued) {
+              summaryFlushQueued = true;
+              queueMicrotask(() => {
+                summaryFlushQueued = false;
+                const sample = summary.poll();
+                if (sample) {
+                  sink.print(formatSummaryLine(sample, summaryWindowMs), {
+                    kind: "summary",
+                    ts: Date.now(),
+                    windowMs: summaryWindowMs,
+                    ...sample,
+                  });
+                }
+              });
+            }
+          }
+
           const cl = res.getHeader("content-length");
           const contentLength = cl ? Number(cl) : null;
           const location = res.getHeader("location");
@@ -388,87 +397,44 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
 
           const isServerFn = url.startsWith("/_serverFn");
 
+          /** Compact JSON payload for one HTTP result. */
+          const buildEvent = (count: number | null) => ({
+            kind: "request" as const,
+            ts: Date.now(),
+            url,
+            method,
+            status,
+            durationMs,
+            contentLength,
+            location: redirectLocation,
+            route: routeName,
+            repeat: count,
+          });
+
           if (serverFnDetails) {
             const parsedArgs =
               serverFnConfig?.logArgs !== false ? parseServerFnArgs(url, method, req.headers, bodyBytes) : undefined;
             const parsedResult =
               serverFnConfig?.logReturns !== false ? parseServerFnResult(status, resBytes) : undefined;
 
-            const formattedArgs =
-              parsedArgs !== undefined
-                ? formatPayload(parsedArgs, {
-                    maxDepth: serverFnConfig?.maxDepth,
-                    maxBreadth: serverFnConfig?.maxBreadth,
-                    maxStringLength: serverFnConfig?.maxStringLength,
-                  })
-                : null;
-
-            const formattedResult =
-              parsedResult !== undefined
-                ? formatPayload(parsedResult, {
-                    maxDepth: serverFnConfig?.maxDepth,
-                    maxBreadth: serverFnConfig?.maxBreadth,
-                    maxStringLength: serverFnConfig?.maxStringLength,
-                  })
-                : null;
-
-            if (serverFnFormat === "tree") {
-              const requestLine = formatLogEntry(
-                url,
-                method,
-                status,
-                durationMs,
-                contentLength,
-                redirectLocation,
-                routeName,
-                null,
-              );
-              if (requestLine) console.log(requestLine);
-
-              const fnLine = formatServerFnLog(
-                serverFnDetails.functionName,
-                serverFnDetails.filePath,
-                serverFnDetails.lineNumber ?? null,
-                status,
-                durationMs,
-                formattedArgs,
-                formattedResult,
-                true, // isTreeChild
-                null,
-              );
-              if (fnLine) console.log(fnLine);
-            } else {
-              const fnLine = formatServerFnLog(
-                serverFnDetails.functionName,
-                serverFnDetails.filePath,
-                serverFnDetails.lineNumber ?? null,
-                status,
-                durationMs,
-                formattedArgs,
-                formattedResult,
-                false, // standalone
-                null,
-              );
-              if (fnLine) console.log(fnLine);
-            }
-
-            try {
-              server.ws.send({
-                type: "custom",
-                event: "vite-plugin-hyperlog:server-fn",
-                data: {
-                  name: serverFnDetails.functionName,
-                  file: serverFnDetails.filePath,
-                  status,
-                  durationMs,
-                  args: parsedArgs,
-                  result: parsedResult,
-                  browserConsole: Boolean(serverFnConfig?.browserConsole),
-                },
-              });
-            } catch {
-              // Ignore WS errors
-            }
+            logServerFnCall({
+              server,
+              sink,
+              details: serverFnDetails,
+              url,
+              method,
+              status,
+              durationMs,
+              parsedArgs,
+              parsedResult,
+              outputFormat: serverFnFormat === "tree" ? "tree" : "standalone",
+              limits: {
+                maxDepth: serverFnConfig?.maxDepth,
+                maxBreadth: serverFnConfig?.maxBreadth,
+                maxStringLength: serverFnConfig?.maxStringLength,
+              },
+              browserConsole: serverFnConfig?.browserConsole === true,
+            });
             return;
           }
 
@@ -524,13 +490,14 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
             null,
           );
 
-          if (logString) {
-            console.log(logString);
-          }
+          sink.print(logString, buildEvent(null));
         };
 
-        res.on("finish", logIt);
-        res.on("close", logIt);
+        const onFinish = () => logIt(false);
+        const onClose = () => logIt(true);
+
+        res.on("finish", onFinish);
+        res.on("close", onClose);
 
         next();
       });
@@ -546,7 +513,10 @@ export function tanstackLogger(config?: TanStackLoggerConfig): Plugin[] {
   // SAFETY: sf is validated to be a configuration object and not a boolean
   const sfConfig = Boolean(sf) && sf !== true ? (sf as ServerFunctionConfig) : undefined;
   const uiEnabled = config?.serverFunctions !== false && sfConfig?.ui !== false;
-  return [requestLogger(config), browserLogger({ serverFunctionUi: uiEnabled })];
+  return [
+    requestLogger(config),
+    browserLogger({ serverFunctionUi: uiEnabled, json: config?.json === true, stripColors: config?.stripColors }),
+  ];
 }
 
 export { browserLogger };
