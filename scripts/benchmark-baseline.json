@@ -1,6 +1,6 @@
 {
   "version": "0.3.0",
-  "updatedAt": "2026-10-15T05:25:26.782Z",
+  "updatedAt": "2026-10-21T06:28:20.885Z",
   "environment": {
     "platform": "darwin",
     "arch": "arm64",
@@ -9,126 +9,126 @@
   },
   "realWorldSimulation": {
     "totalOps": 500000,
-    "wallMs": 356.49825000000055,
-    "throughputOpsSec": 1402531,
-    "avgLatencyUs": 0.712996500000001
+    "wallMs": 241.65312500000073,
+    "throughputOpsSec": 2069081,
+    "avgLatencyUs": 0.4833062500000015
   },
   "complexScenarios": {
     "Enterprise 60+ route tree AST (120 routes)": {
-      "ops": 32755,
-      "latUs": 30.529
+      "ops": 41650,
+      "latUs": 24.009
     },
     "Production 14-frame minified stack remapping": {
-      "ops": 184254,
-      "latUs": 5.427
+      "ops": 286576,
+      "latUs": 3.489
     },
     "High-concurrency burst (100 clients × 1000 reqs)": {
-      "ops": 1338189,
-      "latUs": 0.747
+      "ops": 1828499,
+      "latUs": 0.547
     },
     "Heavy JSON syntax-colorizer (5.7 KB)": {
-      "ops": 32583,
-      "latUs": 30.691
+      "ops": 56311,
+      "latUs": 17.759
     }
   },
   "stressScenarios": {
     "Giant 100KB message payload": {
-      "ops": 4789,
-      "latUs": 208.794
+      "ops": 10455,
+      "latUs": 95.645
     },
     "Ultra-deep 100-frame stack trace": {
-      "ops": 48274,
-      "latUs": 20.715
+      "ops": 79446,
+      "latUs": 12.587
     },
     "Rapid-fire cached time formatting (2M calls)": {
-      "ops": 2119489,
-      "latUs": 0.472
+      "ops": 2598656,
+      "latUs": 0.385
     }
   },
   "benchmarks": {
     "formatLogEntry (6-path mixed)": {
-      "avgOps": 1226963,
-      "avgLatUs": 0.815,
-      "p99LatUs": 0.819,
-      "minOps": 1220720,
-      "maxOps": 1236684
+      "avgOps": 1806492,
+      "avgLatUs": 0.554,
+      "p99LatUs": 0.558,
+      "minOps": 1791315,
+      "maxOps": 1831835
     },
     "formatBrowserLog (6-type mixed)": {
-      "avgOps": 1130147,
-      "avgLatUs": 0.885,
-      "p99LatUs": 0.89,
-      "minOps": 1123575,
-      "maxOps": 1139013
+      "avgOps": 1733763,
+      "avgLatUs": 0.577,
+      "p99LatUs": 0.584,
+      "minOps": 1711808,
+      "maxOps": 1758607
     },
     "formatRouteLog (4-variant mixed)": {
-      "avgOps": 1693170,
-      "avgLatUs": 0.591,
-      "p99LatUs": 0.596,
-      "minOps": 1678884,
-      "maxOps": 1711243
+      "avgOps": 2366792,
+      "avgLatUs": 0.423,
+      "p99LatUs": 0.428,
+      "minOps": 2334809,
+      "maxOps": 2389064
     },
     "parseRouteTreeAst (15 routes)": {
-      "avgOps": 276618,
-      "avgLatUs": 3.615,
-      "p99LatUs": 3.639,
-      "minOps": 274765,
-      "maxOps": 278535
+      "avgOps": 403818,
+      "avgLatUs": 2.476,
+      "p99LatUs": 2.482,
+      "minOps": 402839,
+      "maxOps": 404682
     },
     "remapSourcePosition": {
-      "avgOps": 1076762,
-      "avgLatUs": 0.929,
-      "p99LatUs": 0.936,
-      "minOps": 1068813,
-      "maxOps": 1080291
+      "avgOps": 1313267,
+      "avgLatUs": 0.762,
+      "p99LatUs": 0.77,
+      "minOps": 1298095,
+      "maxOps": 1331608
     },
     "remapStackTrace (5-frame stack)": {
-      "avgOps": 642857,
-      "avgLatUs": 1.556,
-      "p99LatUs": 1.574,
-      "minOps": 635349,
-      "maxOps": 653678
+      "avgOps": 985248,
+      "avgLatUs": 1.015,
+      "p99LatUs": 1.031,
+      "minOps": 970101,
+      "maxOps": 991175
     },
     "getBrowserLoggerScript": {
-      "avgOps": 2414486,
-      "avgLatUs": 0.414,
-      "p99LatUs": 0.418,
-      "minOps": 2394829,
-      "maxOps": 2438729
+      "avgOps": 2456569,
+      "avgLatUs": 0.407,
+      "p99LatUs": 0.413,
+      "minOps": 2424119,
+      "maxOps": 2470260
     },
     "shouldExcludeRequest (mixed dev traffic)": {
-      "avgOps": 2480223,
-      "avgLatUs": 0.403,
-      "p99LatUs": 0.41,
-      "minOps": 2436441,
-      "maxOps": 2501814
+      "avgOps": 3161111,
+      "avgLatUs": 0.316,
+      "p99LatUs": 0.319,
+      "minOps": 3132648,
+      "maxOps": 3198883
     },
     "decodeServerFn (SIMD base64 + JSON)": {
-      "avgOps": 1511167,
-      "avgLatUs": 0.663,
-      "p99LatUs": 0.713,
-      "minOps": 1403277,
-      "maxOps": 1547135
+      "avgOps": 1844242,
+      "avgLatUs": 0.542,
+      "p99LatUs": 0.566,
+      "minOps": 1767870,
+      "maxOps": 1873869
     },
     "formatServerFnLog (tree & standalone)": {
-      "avgOps": 892517,
-      "avgLatUs": 1.12,
-      "p99LatUs": 1.131,
-      "minOps": 883922,
-      "maxOps": 904313
+      "avgOps": 1246820,
+      "avgLatUs": 0.802,
+      "p99LatUs": 0.81,
+      "minOps": 1234357,
+      "maxOps": 1258180
     },
     "matchRoutePath (dynamic parameter matching)": {
-      "avgOps": 1014204,
-      "avgLatUs": 0.986,
-      "p99LatUs": 0.993,
-      "minOps": 1006847,
-      "maxOps": 1021313
+      "avgOps": 1589916,
+      "avgLatUs": 0.629,
+      "p99LatUs": 0.635,
+      "minOps": 1573631,
+      "maxOps": 1614631
     },
     "getServerFnOverlayScript": {
-      "avgOps": 201226,
-      "avgLatUs": 4.97,
-      "p99LatUs": 5,
-      "minOps": 199998,
-      "maxOps": 202428
+      "avgOps": 192240,
+      "avgLatUs": 5.202,
+      "p99LatUs": 5.248,
+      "minOps": 190553,
+      "maxOps": 193743
     }
   }
 }

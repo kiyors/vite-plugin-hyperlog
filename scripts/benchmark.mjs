@@ -268,7 +268,7 @@ function padVisualStart(str, width) {
 function formatBenchmarkDisplayName(name) {
   const map = {
     "shouldExcludeRequest (mixed dev traffic)": "shouldExcludeRequest (dev traffic)",
-    "decodeServerFn (SIMD base64 + JSON)": "decodeServerFn (SIMD Base64)",
+    "decodeServerFn (SIMD base64 + JSON)": "decodeServerFn (URL-safe Base64 + JSON)",
     "formatRouteLog (4-variant mixed)": "formatRouteLog (4-variant mixed)",
     "formatLogEntry (6-path mixed)": "formatLogEntry (6-path mixed)",
     "formatBrowserLog (6-type mixed)": "formatBrowserLog (6-type mixed)",
@@ -743,6 +743,14 @@ subheader("Server Functions & Native Routing Verification");
   check(
     Boolean(hudScript && hudScript.includes("hyperlog-server-fn-host")),
     "getServerFnOverlayScript → returns Shadow DOM overlay",
+  );
+  check(
+    !/<input[^>]*value="\$\{activeFilter\}"[^>]*>/.test(hudScript),
+    "getServerFnOverlayScript → filter value must not be interpolated into HTML (XSS)",
+  );
+  check(
+    hudScript.includes("filterInput.value = activeFilter"),
+    "getServerFnOverlayScript → filter value assigned via DOM API",
   );
 }
 
