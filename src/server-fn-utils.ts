@@ -1,5 +1,48 @@
 import type { IncomingHttpHeaders, IncomingMessage } from "node:http";
 
+/**
+ * A captured body chunk in its original representation.
+ *
+ * Chunks captured from a request or response stream may be Buffers or, when a
+ * consumer has called `setEncoding`, pre-decoded strings. Joining them must not
+ * decode/encode each chunk in isolation: a multi-byte character split across a
+ * chunk boundary would otherwise be silently corrupted.
+ */
+export type CapturedChunk = Buffer | string;
+
+/**
+ * Concatenates captured chunks into one Buffer.
+ *
+ * Buffer chunks are used as-is; string chunks are encoded at the end so that a
+ * multi-byte character split across separate string chunks still joins into a
+ * single complete character (string concatenation preserves the decoder's
+ * boundary handling).
+ */
+export function concatChunks(chunks: Array<Buffer | string>): Buffer {
+  if (chunks.length === 0) return Buffer.alloc(0);
+  if (chunks.length === 1) {
+    const [only] = chunks;
+    return Buffer.isBuffer(only) ? only : Buffer.from(only, "utf8");
+  }
+  const parts: Buffer[] = [];
+  let pendingStrings: string[] = [];
+  for (const chunk of chunks) {
+    if (Buffer.isBuffer(chunk)) {
+      if (pendingStrings.length > 0) {
+        parts.push(Buffer.from(pendingStrings.join(""), "utf8"));
+        pendingStrings = [];
+      }
+      parts.push(chunk);
+    } else {
+      pendingStrings.push(chunk);
+    }
+  }
+  if (pendingStrings.length > 0) {
+    parts.push(Buffer.from(pendingStrings.join(""), "utf8"));
+  }
+  return Buffer.concat(parts);
+}
+
 export interface FormatPayloadOptions {
   maxDepth?: number;
   maxBreadth?: number;
@@ -147,7 +190,8 @@ export interface ServerFnDetails {
   lineNumber?: number;
 }
 
-import { decodeServerFn } from "../index.js";
+import { decodeServerFn, formatLogEntry, formatServerFnLog } from "../index.js";
+import type { LogSink } from "./log-sink";
 
 /**
  * Decodes TanStack Start base64 payload into function and file path.
@@ -213,7 +257,12 @@ export function detectServerFunction(
 /**
  * Safely parses server function arguments from request body bytes or query string.
  */
-export function parseServerFnArgs(url: string, method: string, headers: IncomingHttpHeaders, bodyBytes: Buffer[]): any {
+export function parseServerFnArgs(
+  url: string,
+  method: string,
+  headers: IncomingHttpHeaders,
+  bodyBytes: Array<Buffer | string>,
+): any {
   try {
     if (method === "GET") {
       const qIndex = url.indexOf("?");
@@ -234,7 +283,7 @@ export function parseServerFnArgs(url: string, method: string, headers: Incoming
 
     if (bodyBytes.length === 0) return undefined;
 
-    const rawBody = Buffer.concat(bodyBytes).toString("utf-8");
+    const rawBody = concatChunks(bodyBytes).toString("utf-8");
     if (!rawBody.trim()) return undefined;
 
     const contentType = String(headers["content-type"] || "");
@@ -269,10 +318,10 @@ export function parseServerFnArgs(url: string, method: string, headers: Incoming
 /**
  * Safely parses server function return value or error from response body bytes.
  */
-export function parseServerFnResult(statusCode: number, resBytes: Buffer[]): any {
+export function parseServerFnResult(statusCode: number, resBytes: Array<Buffer | string>): any {
   try {
     if (resBytes.length === 0) return undefined;
-    const rawRes = Buffer.concat(resBytes).toString("utf-8");
+    const rawRes = concatChunks(resBytes).toString("utf-8");
     if (!rawRes.trim()) return undefined;
 
     try {
@@ -289,5 +338,184 @@ export function parseServerFnResult(statusCode: number, resBytes: Buffer[]): any
     }
   } catch {
     return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared request/response capture + native server-fn logging (single copy for
+// every adapter — previously duplicated and drifting between plugin.ts and
+// tanstack.ts).
+// ---------------------------------------------------------------------------
+
+/** Maximum captured request/response body size per server-function request. */
+export const MAX_CAPTURE_BYTES = 64 * 1024;
+
+export interface ServerFnBodyCapture {
+  bodyBytes: CapturedChunk[];
+  resBytes: CapturedChunk[];
+}
+
+/**
+ * Attaches body capture to a server-function request/response pair.
+ *
+ * Requests are observed with a plain `"data"` listener instead of monkey-patching
+ * `req.emit`: the listener is the standard middleware pattern (same one that
+ * body-parsing middleware itself uses) and avoids replacing a function on every
+ * request. Chunks are stored in their original representation and joined once at
+ * logging time (`concatChunks`), so a multi-byte character split across chunks
+ * survives.
+ */
+export function captureServerFnBodies(
+  req: { on(event: string, listener: (chunk: CapturedChunk) => void): void },
+  res: {
+    write(chunk: CapturedChunk | null, ...args: any[]): boolean;
+    end(chunk: CapturedChunk | null, ...args: any[]): void;
+  },
+  captureArgs: boolean,
+  captureReturns: boolean,
+): ServerFnBodyCapture {
+  const bodyBytes: CapturedChunk[] = [];
+  const resBytes: CapturedChunk[] = [];
+  let totalBodyLen = 0;
+  let totalResLen = 0;
+
+  if (captureArgs) {
+    req.on("data", (chunk) => {
+      if (chunk == null || totalBodyLen >= MAX_CAPTURE_BYTES) return;
+      bodyBytes.push(chunk);
+      totalBodyLen += chunk.length;
+    });
+  }
+
+  if (captureReturns) {
+    const origWrite = res.write;
+    const origEnd = res.end;
+
+    res.write = function (chunk, ...args) {
+      if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
+        resBytes.push(chunk);
+        totalResLen += chunk.length;
+      }
+      return origWrite.apply(this, [chunk, ...args]);
+    };
+
+    res.end = function (chunk, ...args) {
+      if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
+        resBytes.push(chunk);
+        totalResLen += chunk.length;
+      }
+      return origEnd.apply(this, [chunk, ...args]);
+    };
+  }
+
+  return { bodyBytes, resBytes };
+}
+
+/** Shape pushed to connected DevTools HUD clients over the Vite WS channel. */
+export interface WsHudPayload {
+  type: "custom";
+  event: string;
+  data: unknown;
+}
+
+export interface LogServerFnCallOptions {
+  /** Vite dev server, or null in odd hostings; only used for the client HUD push. */
+  server: { ws?: { send(payload: WsHudPayload): void } } | null;
+  sink: LogSink;
+  details: ServerFnDetails;
+  url: string;
+  method: string;
+  status: number;
+  durationMs: number;
+  parsedArgs: unknown;
+  parsedResult: unknown;
+  outputFormat: "tree" | "standalone";
+  limits: { maxDepth?: number; maxBreadth?: number; maxStringLength?: number };
+  /** Mirrors `serverFunctions.browserConsole` in the HUD payload, as before. */
+  browserConsole?: boolean;
+}
+
+/**
+ * Formats and prints one finished server-function call (plus the enclosing
+ * request line in `tree` mode) and pushes it to the DevTools HUD clients.
+ *
+ * Shared by both adapters so the tree/standalone rendering and the HUD payload
+ * cannot drift apart again.
+ */
+export function logServerFnCall(options: LogServerFnCallOptions): void {
+  const { sink, details, status, durationMs, parsedArgs, parsedResult, outputFormat, limits, server, url, method } =
+    options;
+
+  const formattedArgs = parsedArgs !== undefined ? formatPayload(parsedArgs, limits) : null;
+  const formattedResult = parsedResult !== undefined ? formatPayload(parsedResult, limits) : null;
+
+  const ts = Date.now();
+  if (outputFormat === "tree") {
+    const requestLine = formatLogEntry(url, method, status, durationMs, null, null, null, null);
+    sink.print(requestLine, { kind: "request", ts, url, method, status, durationMs });
+
+    const fnLine = formatServerFnLog(
+      details.functionName,
+      details.filePath,
+      details.lineNumber ?? null,
+      status,
+      durationMs,
+      formattedArgs,
+      formattedResult,
+      true, // isTreeChild
+      null,
+    );
+    sink.print(fnLine, {
+      kind: "server-fn",
+      ts,
+      name: details.functionName,
+      file: details.filePath,
+      line: details.lineNumber ?? null,
+      status,
+      durationMs,
+      args: parsedArgs,
+      result: parsedResult,
+    });
+  } else {
+    const fnLine = formatServerFnLog(
+      details.functionName,
+      details.filePath,
+      details.lineNumber ?? null,
+      status,
+      durationMs,
+      formattedArgs,
+      formattedResult,
+      false, // standalone
+      null,
+    );
+    sink.print(fnLine, {
+      kind: "server-fn",
+      ts,
+      name: details.functionName,
+      file: details.filePath,
+      line: details.lineNumber ?? null,
+      status,
+      durationMs,
+      args: parsedArgs,
+      result: parsedResult,
+    });
+  }
+
+  try {
+    server?.ws?.send({
+      type: "custom",
+      event: "vite-plugin-hyperlog:server-fn",
+      data: {
+        name: details.functionName,
+        file: details.filePath,
+        status,
+        durationMs,
+        args: parsedArgs,
+        result: parsedResult,
+        browserConsole: options.browserConsole === true,
+      },
+    });
+  } catch {
+    // The HUD push is best-effort; printing already happened.
   }
 }
