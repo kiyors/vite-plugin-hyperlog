@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -235,6 +236,36 @@ test("E2E: tanstack logger with server-fn, routeTree, SPA nav, and rich logs", a
     await page.click("#link-spa-speaker");
     await page.waitForTimeout(800);
     expect(stripAnsi(output)).toContain("/speakers/cedric-grolet");
+
+    // 6. Route endpoint hardening (same-origin guard):
+    //    - same-page Origin → accepted
+    //    - cross-origin forgery (Origin ≠ Host) → 403, before any body read
+    //    - header-less non-browser clients (curl, IDE tools) → still accepted
+    const originProbe = (headers: Record<string, string>) =>
+      new Promise<number>((resolve, reject) => {
+        const probe = http.request(
+          { host: "localhost", port, path: "/__hyperlog/route", method: "POST", headers },
+          (res) => {
+            res.resume();
+            res.on("end", () => resolve(res.statusCode ?? 0));
+          },
+        );
+        probe.on("error", reject);
+        probe.end(JSON.stringify({ path: "/origin-probe" }));
+      });
+
+    expect(await originProbe({ origin: url, "content-type": "application/json" }), "same-origin").toBe(204);
+    expect(
+      await originProbe({ origin: "http://evil.example:9999", "content-type": "application/json" }),
+      "forged",
+    ).toBe(403);
+    expect(await originProbe({ "content-type": "application/json" }), "header-less").toBe(204);
+
+    // The accepted probe logs one [route] line once the batch flushes.
+    for (let i = 0; i < 20 && !stripAnsi(output).includes("/origin-probe"); i++) {
+      await page.waitForTimeout(100);
+    }
+    expect(stripAnsi(output)).toContain("/origin-probe");
 
     await page.close();
   } finally {

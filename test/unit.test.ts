@@ -1,3 +1,5 @@
+import { EventEmitter } from "node:events";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -10,10 +12,35 @@ import {
   remapStackTrace,
 } from "../index.js";
 import { GraphReevaluationDetector } from "../src/graph";
+import {
+  createLogSink,
+  createSummaryTracker,
+  formatSummaryLine,
+  readForceColor,
+  readNoColor,
+  stripAnsi,
+} from "../src/log-sink";
 import { browserLoggerScriptSrc, isModuleRequest, matchesExclusion } from "../src/plugin";
-import { detectServerFunction, formatPayload, parseServerFnArgs, parseServerFnResult } from "../src/server-fn-utils";
+import {
+  MAX_CAPTURE_BYTES,
+  captureServerFnBodies,
+  concatChunks,
+  detectServerFunction,
+  formatPayload,
+  logServerFnCall,
+  parseServerFnArgs,
+  parseServerFnResult,
+} from "../src/server-fn-utils";
 import { parseRouteTreeContent } from "../src/tanstack";
 import { registerTanStackRouterLogger } from "../src/tanstack-client";
+
+/** Collects everything a sink writes, for assertions. */
+function fakeWriter() {
+  const writes: string[] = [];
+  return { writes, write: (chunk: string) => writes.push(chunk) };
+}
+
+const flushMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe("Route Tree Parser", () => {
   const sampleRouteTree = `
@@ -782,5 +809,252 @@ describe("Server Function Args and Result Parsers", () => {
 
     const errRes = [Buffer.from(JSON.stringify({ message: "Forbidden" }))];
     expect(parseServerFnResult(403, errRes)).toBe("Forbidden");
+  });
+});
+
+describe("ANSI color policy", () => {
+  it("strips escape sequences but keeps plain text intact", () => {
+    const colored = "\u001B[32mGET\u001B[0m /api/x 200 3ms";
+    expect(stripAnsi(colored)).toBe("GET /api/x 200 3ms");
+    expect(stripAnsi("plain text stays put")).toBe("plain text stays put");
+    // Multi-sequence input and OSC sequences are covered too.
+    expect(stripAnsi("\u001B[2m\u001B[31m a \u001B[0m\u001B]0;title\u0007b")).toBe(" a b");
+  });
+
+  it("reads no-color / force-color flags", () => {
+    const prevNo = process.env.NO_COLOR;
+    const prevForce = process.env.FORCE_COLOR;
+    try {
+      delete process.env.NO_COLOR;
+      delete process.env.FORCE_COLOR;
+      expect(readNoColor()).toBe(false);
+      expect(readForceColor()).toBeNull();
+
+      process.env.NO_COLOR = "1";
+      expect(readNoColor()).toBe(true);
+      // FORCE_COLOR wins over NO_COLOR.
+      process.env.FORCE_COLOR = "1";
+      expect(readForceColor()).toBe(true);
+
+      process.env.NO_COLOR = "";
+      expect(readNoColor()).toBe(false);
+      process.env.FORCE_COLOR = "0";
+      expect(readForceColor()).toBe(false);
+    } finally {
+      if (prevNo === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = prevNo;
+      if (prevForce === undefined) delete process.env.FORCE_COLOR;
+      else process.env.FORCE_COLOR = prevForce;
+    }
+  });
+});
+
+describe("LogSink batching", () => {
+  it("coalesces lines written in the same tick into a single write", async () => {
+    const out = fakeWriter();
+    const sink = createLogSink({ writer: out });
+
+    sink.print("one");
+    sink.print("two");
+    sink.print("three");
+    expect(out.writes).toEqual([]); // nothing written until the microtask runs
+
+    await flushMicrotasks();
+    expect(out.writes).toHaveLength(1);
+    expect(out.writes[0]).toBe("one\ntwo\nthree\n");
+  });
+
+  it("flushes immediately on demand", () => {
+    const out = fakeWriter();
+    const sink = createLogSink({ writer: out });
+
+    sink.print("urgent");
+    sink.flush();
+    expect(out.writes).toEqual(["urgent\n"]);
+  });
+
+  it("strips colours for non-terminal writers", async () => {
+    const out = fakeWriter();
+    const sink = createLogSink({ writer: out });
+
+    sink.print("\u001B[32mgreen\u001B[0m tail");
+    await flushMicrotasks();
+    expect(out.writes[0]).toContain("green tail");
+    expect(out.writes[0]).not.toContain("\u001B[32m");
+  });
+
+  it("keeps colours when FORCE_COLOR is set", async () => {
+    const prevForce = process.env.FORCE_COLOR;
+    process.env.FORCE_COLOR = "1";
+    try {
+      const out = fakeWriter();
+      const sink = createLogSink({ writer: out });
+      sink.print("\u001B[32mgreen\u001B[0m tail");
+      await flushMicrotasks();
+      expect(out.writes[0]).toContain("\u001B[32m");
+    } finally {
+      if (prevForce === undefined) delete process.env.FORCE_COLOR;
+      else process.env.FORCE_COLOR = prevForce;
+    }
+  });
+
+  it("emits NDJSON rows in json mode", async () => {
+    const out = fakeWriter();
+    const sink = createLogSink({ writer: out, json: true });
+
+    sink.print("IGNORED IN JSON MODE", {
+      kind: "request",
+      ts: 123,
+      url: "/x",
+      method: "GET",
+      status: 200,
+      durationMs: 1.5,
+    });
+    sink.print("also ignored", { kind: "route", ts: 456, path: "/p" });
+    sink.print("fallback row");
+    await flushMicrotasks();
+
+    expect(out.writes).toHaveLength(1);
+    const rows = out.writes[0]
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(rows[0]).toEqual({ kind: "request", ts: 123, url: "/x", method: "GET", status: 200, durationMs: 1.5 });
+    expect(rows[1]).toEqual({ kind: "route", ts: 456, path: "/p" });
+    expect(rows[2].kind).toBe("line");
+  });
+
+  it("skips empty lines", () => {
+    const out = fakeWriter();
+    const sink = createLogSink({ writer: out });
+    sink.print("");
+    sink.flush();
+    expect(out.writes).toEqual([]);
+  });
+});
+
+describe("Rolling latency summary", () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it("returns nothing while the window is open", () => {
+    const tracker = createSummaryTracker({ windowMs: 10_000, minSamples: 2 });
+    tracker.record(5);
+    tracker.record(7);
+    expect(tracker.poll()).toBeNull();
+  });
+
+  it("computes nearest-rank quantiles when the window closes", async () => {
+    const tracker = createSummaryTracker({ windowMs: 250, minSamples: 5 });
+    for (const ms of [1, 2, 3, 4, 100]) tracker.record(ms);
+    await sleep(300);
+    expect(tracker.poll()).toEqual({ count: 5, p50: 3, p95: 100, p99: 100 });
+  });
+
+  it("waits for minSamples even if the window has closed", async () => {
+    const tracker = createSummaryTracker({ windowMs: 250, minSamples: 4 });
+    tracker.record(10);
+    tracker.record(20);
+    await sleep(300);
+    // Window closed with only 2 samples: too sparse, no footer, fresh window.
+    expect(tracker.poll()).toBeNull();
+    expect(tracker.poll()).toBeNull();
+  });
+
+  it("ignores invalid durations", () => {
+    const tracker = createSummaryTracker({ windowMs: 10, minSamples: 2 });
+    tracker.record(Number.NaN);
+    tracker.record(-1);
+    expect(tracker.poll()).toBeNull();
+  });
+
+  it("renders a compact footer line", () => {
+    const line = stripAnsi(formatSummaryLine({ count: 87, p50: 1.25, p95: 9.4, p99: 31 }, 10_000));
+    expect(line).toContain("10s");
+    expect(line).toContain("p50 1.25ms");
+    expect(line).toContain("p95 9.40ms");
+    expect(line).toContain("p99 31ms");
+    expect(line).toContain("87 reqs");
+    expect(line).not.toMatch(/\n/);
+  });
+});
+
+describe("captureServerFnBodies", () => {
+  it("captures request data and response writes in original form", () => {
+    const events = new EventEmitter();
+    const writes: unknown[] = [];
+    const ends: unknown[] = [];
+    const res = {
+      write: (...args: unknown[]) => {
+        writes.push(args);
+        return true;
+      },
+      end: (...args: unknown[]) => {
+        ends.push(args);
+        return undefined;
+      },
+    };
+
+    const capture = captureServerFnBodies(events, res, true, true);
+
+    events.emit("data", Buffer.from("ab"));
+    events.emit("data", "cd");
+    events.emit("data", null); // noise ignored
+    res.write(Buffer.from("xy"), "utf8");
+    res.end(Buffer.from("z"), () => {});
+    expect(writes).toHaveLength(1);
+    expect(ends).toHaveLength(1);
+
+    expect(concatChunks(capture.bodyBytes).toString()).toBe("abcd");
+    expect(concatChunks(capture.resBytes).toString()).toBe("xyz");
+  });
+
+  it("skips capture for plain GET requests with args disabled", () => {
+    const events = new EventEmitter();
+    events.emit("data", Buffer.from("ignored"));
+    const res = { write: () => true, end: () => undefined };
+    const capture = captureServerFnBodies(events, res, false, false);
+    expect(capture.bodyBytes).toEqual([]);
+    expect(capture.resBytes).toEqual([]);
+  });
+
+  it("enforces MAX_CAPTURE_BYTES forever, not per-chunk", () => {
+    const events = new EventEmitter();
+    const capture = captureServerFnBodies(events, { write: () => true, end: () => undefined }, true, false);
+
+    const big = Buffer.alloc(40 * 1024);
+    events.emit("data", big);
+    events.emit("data", big); // 80 KB total: over the 64 KB budget but still stored (kept raw)
+    events.emit("data", Buffer.alloc(4)); // budget already exceeded: skipped
+    expect(capture.bodyBytes).toHaveLength(2);
+    expect(MAX_CAPTURE_BYTES).toBe(64 * 1024);
+  });
+});
+
+describe("logServerFnCall", () => {
+  it("prints tree output and produces no duplication", async () => {
+    const out = fakeWriter();
+    const sink = createLogSink({ writer: out });
+    logServerFnCall({
+      server: { ws: { send: () => {} } },
+      sink,
+      details: { functionName: "getAuthSession", filePath: "src/fns/session.ts", lineNumber: 8 },
+      url: "/_serverFn/getAuthSession",
+      method: "POST",
+      status: 200,
+      durationMs: 12,
+      parsedArgs: { userId: 7 },
+      parsedResult: { ok: true },
+      outputFormat: "tree",
+      limits: {},
+    });
+    await flushMicrotasks();
+
+    // Expect exactly one request row + one server-fn row.
+    expect(out.writes).toHaveLength(1);
+    const rows = out.writes[0].trimEnd().split("\n");
+    expect(rows).toHaveLength(2);
+    expect(stripAnsi(rows[0])).toContain("/_serverFn/getAuthSession");
+    expect(stripAnsi(rows[1])).toContain("getAuthSession");
+    expect(stripAnsi(rows[1])).toContain("src/fns/session.ts");
   });
 });
