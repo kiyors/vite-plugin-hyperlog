@@ -703,6 +703,18 @@ function readForceColor() {
 	if (value === void 0 || value === "") return null;
 	return !(value === "0" || value === "false");
 }
+/** Builds the canonical NDJSON row for one HTTP result, shared by every adapter. */
+function buildRequestEvent(url, method, status, durationMs, extras = {}) {
+	return {
+		kind: "request",
+		ts: Date.now(),
+		url,
+		method,
+		status,
+		durationMs,
+		...extras
+	};
+}
 function createLogSink(options = {}) {
 	const writer = options.writer ?? process.stdout;
 	const isRealTerminal = writer === process.stdout && process.stdout.isTTY === true;
@@ -1226,10 +1238,19 @@ function routeEventSinkHandler(sink) {
 		});
 	};
 }
+/**
+* Lazily-created module sink for standalone callers (direct `attachRouteEndpoint`
+* use, custom integrations) so even those prints follow the same color policy,
+* batching, and NDJSON shape as the plugin-managed output.
+*/
+let fallbackSink = null;
+function moduleSink() {
+	if (!fallbackSink) fallbackSink = createLogSink();
+	return fallbackSink;
+}
 /** Logs one client-reported SPA route transition. */
 function logRouteEvent(data) {
-	const logString = (0, import_vite_plugin_logger.formatRouteLog)(data.routeId || data.path || "", data.path || "", data.params ?? null, data.durationMs ? Number(data.durationMs) : null, Boolean(data.isPreload));
-	if (logString) console.log(logString);
+	routeEventSinkHandler(moduleSink())(data);
 }
 /**
 * Attaches the SPA route reporting endpoint exactly once per dev server.
@@ -1300,15 +1321,7 @@ function requestLogger(config) {
 				repeats.delete(key);
 				if (entry.count <= 1) return;
 				const repeatLine = (0, import_vite_plugin_logger.formatLogEntry)(entry.url, entry.method, entry.status, entry.totalDurationMs, null, null, null, entry.count);
-				sink.print(repeatLine, {
-					kind: "request",
-					ts: Date.now(),
-					url: entry.url,
-					method: entry.method,
-					status: entry.status,
-					durationMs: entry.totalDurationMs,
-					repeat: entry.count
-				});
+				sink.print(repeatLine, buildRequestEvent(entry.url, entry.method, entry.status, entry.totalDurationMs, { repeat: entry.count }));
 			};
 			server.httpServer?.on("close", () => {
 				for (const [key, entry] of repeats) {
@@ -1329,19 +1342,6 @@ function requestLogger(config) {
 				});
 			};
 			attachRouteEndpoint(server, routeEventSinkHandler(sink));
-			/** Compact JSON payload for one HTTP result. */
-			const requestEvent = (url, method, status, durationMs, contentLength, redirectLocation, routeName, count) => ({
-				kind: "request",
-				ts: Date.now(),
-				url,
-				method,
-				status,
-				durationMs,
-				contentLength,
-				location: redirectLocation,
-				route: routeName,
-				repeat: count
-			});
 			server.middlewares.use((req, res, next) => {
 				const url = req.originalUrl || "";
 				const method = req.method || "GET";
@@ -1406,7 +1406,11 @@ function requestLogger(config) {
 					}
 					if (!groupRepeats) {
 						const line = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
-						sink.print(line, requestEvent(url, method, status, durationMs, contentLength, redirectLocation, routeName, null));
+						sink.print(line, buildRequestEvent(url, method, status, durationMs, {
+							contentLength,
+							location: redirectLocation,
+							route: routeName
+						}));
 						return;
 					}
 					const key = `${method} ${url}`;
@@ -1420,7 +1424,11 @@ function requestLogger(config) {
 						return;
 					}
 					const line = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
-					sink.print(line, requestEvent(url, method, status, durationMs, contentLength, redirectLocation, routeName, null));
+					sink.print(line, buildRequestEvent(url, method, status, durationMs, {
+						contentLength,
+						location: redirectLocation,
+						route: routeName
+					}));
 					const entry = {
 						timer: setTimeout(() => {}, 0),
 						count: 1,
@@ -1617,4 +1625,4 @@ function createFrameworkLogger(defaultExclude) {
 	};
 }
 //#endregion
-export { readForceColor as C, require_vite_plugin_logger as E, formatSummaryLine as S, stripAnsi as T, logServerFnCall as _, browserLoggerScriptSrc as a, createLogSink as b, logRouteEvent as c, routeEventSinkHandler as d, getServerFunctionOverlayScript as f, formatPayload as g, detectServerFunction as h, browserLogger as i, logger as l, captureServerFnBodies as m, allocateExclusionConfigId as n, createFrameworkLogger as o, MAX_CAPTURE_BYTES as p, attachRouteEndpoint as r, import_vite_plugin_logger as s, DEFAULT_EXCLUDE_URLS as t, requestLogger as u, parseServerFnArgs as v, readNoColor as w, createSummaryTracker as x, parseServerFnResult as y };
+export { formatSummaryLine as C, require_vite_plugin_logger as D, stripAnsi as E, createSummaryTracker as S, readNoColor as T, logServerFnCall as _, browserLoggerScriptSrc as a, buildRequestEvent as b, logRouteEvent as c, routeEventSinkHandler as d, getServerFunctionOverlayScript as f, formatPayload as g, detectServerFunction as h, browserLogger as i, logger as l, captureServerFnBodies as m, allocateExclusionConfigId as n, createFrameworkLogger as o, MAX_CAPTURE_BYTES as p, attachRouteEndpoint as r, import_vite_plugin_logger as s, DEFAULT_EXCLUDE_URLS as t, requestLogger as u, parseServerFnArgs as v, readForceColor as w, createLogSink as x, parseServerFnResult as y };

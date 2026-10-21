@@ -1,4 +1,4 @@
-import { E as require_vite_plugin_logger, S as formatSummaryLine, _ as logServerFnCall, b as createLogSink, d as routeEventSinkHandler, h as detectServerFunction, i as browserLogger, m as captureServerFnBodies, n as allocateExclusionConfigId, r as attachRouteEndpoint, t as DEFAULT_EXCLUDE_URLS, v as parseServerFnArgs, x as createSummaryTracker, y as parseServerFnResult } from "./plugin-shared.mjs";
+import { C as formatSummaryLine, D as require_vite_plugin_logger, S as createSummaryTracker, _ as logServerFnCall, b as buildRequestEvent, d as routeEventSinkHandler, h as detectServerFunction, i as browserLogger, m as captureServerFnBodies, n as allocateExclusionConfigId, r as attachRouteEndpoint, t as DEFAULT_EXCLUDE_URLS, v as parseServerFnArgs, x as createLogSink, y as parseServerFnResult } from "./plugin-shared.mjs";
 import fs from "node:fs";
 import path from "node:path";
 //#region src/tanstack.ts
@@ -115,18 +115,12 @@ function requestLogger(config) {
 				pendingServerFns.delete(key);
 				const avgDuration = entry.totalDuration / entry.count;
 				const logString = (0, import_vite_plugin_logger.formatLogEntry)(entry.url, entry.method, entry.status, avgDuration, entry.contentLength, entry.redirectLocation, entry.routeName, entry.count > 1 ? entry.count : null);
-				sink.print(logString, {
-					kind: "request",
-					ts: Date.now(),
-					url: entry.url,
-					method: entry.method,
-					status: entry.status,
-					durationMs: avgDuration,
+				sink.print(logString, buildRequestEvent(entry.url, entry.method, entry.status, avgDuration, {
 					contentLength: entry.contentLength,
 					location: entry.redirectLocation,
 					route: entry.routeName,
 					repeat: entry.count > 1 ? entry.count : null
-				});
+				}));
 			};
 			const treeRelativePath = config?.routeTreePath || "src/routeTree.gen.ts";
 			const treeAbsolutePath = path.resolve(server.config.root, treeRelativePath);
@@ -192,19 +186,6 @@ function requestLogger(config) {
 					const redirectLocation = location ? String(location) : null;
 					const routeName = resolveRouteName(url);
 					const isServerFn = url.startsWith("/_serverFn");
-					/** Compact JSON payload for one HTTP result. */
-					const buildEvent = (count) => ({
-						kind: "request",
-						ts: Date.now(),
-						url,
-						method,
-						status,
-						durationMs,
-						contentLength,
-						location: redirectLocation,
-						route: routeName,
-						repeat: count
-					});
 					if (serverFnDetails) {
 						const parsedArgs = serverFnConfig?.logArgs !== false ? parseServerFnArgs(url, method, req.headers, bodyBytes) : void 0;
 						const parsedResult = serverFnConfig?.logReturns !== false ? parseServerFnResult(status, resBytes) : void 0;
@@ -262,7 +243,11 @@ function requestLogger(config) {
 						return;
 					}
 					const logString = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
-					sink.print(logString, buildEvent(null));
+					sink.print(logString, buildRequestEvent(url, method, status, durationMs, {
+						contentLength,
+						location: redirectLocation,
+						route: routeName
+					}));
 				};
 				const onFinish = () => logIt(false);
 				const onClose = () => logIt(true);

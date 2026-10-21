@@ -8,10 +8,21 @@ A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
 > for the migration notes — in short, set `excludeModules: false` if you relied on
 > seeing your own `/src/**` modules logged.
 
+## New in 0.4.0
+
+- **NDJSON output mode** — set `json: true` and every adapter (requests, server functions, routes, browser logs, graph warnings) emits one compact structured JSON row per event, ready for `jq`, a file, or a log collector.
+- **Rolling latency footer** — `summaryStats` (default on) prints `└─ 10s p50 1.2ms · p95 9.4ms · p99 31ms · 87 reqs` once per configurable window while traffic flows, silent while the dev server idles.
+- **Smart terminal color handling** — colors are stripped automatically for pipes/CI/`NO_COLOR`, forced on with `FORCE_COLOR`, and can be forced off entirely with `stripColors: false`.
+- **Batched terminal writes** — consecutive log lines within one tick are coalesced into a single `process.stdout.write`, cutting syscalls sharply on busy pages while preserving ordering.
+- **Browser-log rate budget** — a flooded page can no longer pin the dev-server CPU or spam the terminal: prints are capped at 400 rows/second with a single suppression notice.
+- **Hardened SPA route endpoint** — `POST /__hyperlog/route` rejects cross-origin forgeries with `403` before reading any body.
+- **One shared pipeline for all adapters** — body capture, server-function rendering, route reporting, and output formatting are now a single implementation (no more adapter drift; TanStack gained 499-abort parity).
+- **~22–118% faster native layer vs 0.3.0** (see the improvement table below).
+
 ## Features
 
-- **`requestLogger`**: High-performance HTTP request logging. Replaces Vite's default logger with a highly optimized Rust-powered logger. Tracks duration times, reports aborted requests as `499`, collapses repeated requests with a repeat counter, and formats output with ANSI colors instantly.
-- **`browserLogger`**: Client-side console logging in your terminal. Automatically intercepts `console.log`, `console.error`, and uncaught exceptions from your browser, securely routes them to the Vite dev server via WebSockets, and prints them to your backend terminal. Framework-agnostic and universally injected. Dev-server only, so nothing is injected into production builds.
+- **`requestLogger`**: High-performance HTTP request logging. Replaces Vite's default logger with a highly optimized Rust-powered logger. Tracks duration times, reports aborted requests as `499`, collapses repeated requests with a repeat counter, and formats output with ANSI colors instantly. Ships pretty, NDJSON (`json`), and summary (`summaryStats`) output modes.
+- **`browserLogger`**: Client-side console logging in your terminal. Automatically intercepts `console.log`, `console.error`, and uncaught exceptions from your browser, securely routes them to the Vite dev server via WebSockets, and prints them to your backend terminal. Framework-agnostic, rate-budgeted, and dev-server only, so nothing is injected into production builds.
 
 ## Installation
 
@@ -23,7 +34,19 @@ pnpm add -D vite-plugin-hyperlog
 
 ## Usage
 
-Import `requestLogger` and `browserLogger` from your specific framework's entry point, and add them to the `plugins` array in your `vite.config.ts`. The framework-specific import automatically sets up optimized exclusions.
+The quickest setup is the unified `logger()` export, which registers the request logger and browser logger in one call (default export of the package):
+
+```typescript
+// vite.config.ts
+import { defineConfig } from "vite";
+import logger from "vite-plugin-hyperlog";
+
+export default defineConfig({
+  plugins: [logger()],
+});
+```
+
+Prefer per-plugin control or framework-tuned exclusions? Import `requestLogger` and `browserLogger` from your specific framework's entry point — the framework-specific import automatically sets up optimized exclusions.
 
 ```typescript
 // vite.config.ts
@@ -131,6 +154,42 @@ The two usual causes are a duplicated entry `<script>` in `index.html` and a
 cache-busted dynamic `import()` of your entry module. Set
 `detectGraphReevaluation: false` to silence it.
 
+### Rolling Latency Summary
+
+While traffic is flowing, a footer line appears once per window (default every
+10 s, at least 5 requests) so slow paths stand out without a profiler:
+
+```bash
+└─ 10s p50 1.2ms · p95 9.4ms · p99 31ms · 87 reqs
+```
+
+Values are nearest-rank p50/p95/p99 over the window's request durations, and the
+window resets automatically: an idle dev server never prints anything. Tune it
+with `summaryStats: { windowMs: 5000, minSamples: 10 }`, or turn it off with
+`summaryStats: false`. In `json: true` mode the same snapshot is emitted as a
+`{"kind":"summary",...}` row.
+
+### Hardened Dev Server
+
+- **Route endpoint origin guard**: the browser reports SPA navigations to
+  `POST /__hyperlog/route`. Browsers whose `Origin` does not match the dev
+  server's `Host` (cross-site pages, DNS-rebinding probes) are rejected with
+  `403` before any body is read. Header-less non-browser clients (curl, IDE
+  extensions) are unaffected.
+- **Browser-log rate budget**: browser-delivered `console` output is capped at
+  400 printed rows per rolling second. Flooded windows are dropped until the
+  next second and reported as a single notice line, so a runaway render loop
+  cannot starve the dev server or flood your terminal:
+
+  ```bash
+  [hyperlog] 132 browser log rows suppressed (rate limit)
+  ```
+
+- **Terminal-safe plumbing**: output is written through microtask-batched,
+  single-write flushes, striped of ANSI when stdout is not a terminal or
+  `NO_COLOR` is set, and flushed once more on server close so shutdown lines
+  are never lost.
+
 ### TanStack Start & TanStack Router
 
 For TanStack applications, import from `vite-plugin-hyperlog/tanstack`. It includes tailored optimizations:
@@ -217,7 +276,7 @@ not only on `createBrowserRouter`.
 - **ANSI Syntax Highlighting**: Powered by a zero-dependency, pure-native Rust JSON scanner to colorize objects logged from the browser with syntax coloring for keys, strings, numbers, booleans, and nulls.
 - **Timer Support**: Supports `console.time('label')` and `console.timeEnd('label')` to track client-side performance.
 - **Intelligent Stack Trace Cleaning & Sourcemap Remapping**: Powered by a custom zero-dependency VLQ sourcemap decoder to parse browser error frames, highlight user application frames (`➜ src/lib/api.ts:25:11 in fetchUser`), dim dependency noise, and remap positions to original TypeScript source files.
-- **Flood Protection**: Rapid repetitive logs (e.g. from render loops or scroll listeners) are debounced and collapsed with a repeat counter (`(x5)`).
+- **Flood Protection**: Rapid repetitive logs (e.g. from render loops or scroll listeners) are debounced and collapsed with a repeat counter (`(x5)`), and a rolling rate budget caps terminal prints so whole-log floods degrade to a single notice instead of pinning the dev server.
 
 ```bash
 22:56:51 [browser]       User signed in  (src/components/Login.tsx:42)
@@ -233,6 +292,27 @@ not only on `createBrowserRouter`.
 ## Performance & Benchmarks
 
 `vite-plugin-hyperlog` is engineered for zero runtime overhead in Vite development servers. The native extension is written in pure, dependency-minimal Rust compiled to bare metal via Node-API.
+
+### 0.3.0 → 0.4.0 Improvement
+
+The 0.4.0 release switched the release profile to `opt-level = 3` and merged the
+per-request exclusion/module classification into one native crossing. Measured
+on an idle Apple M4 (Node 24, darwin-arm64), before → after:
+
+| Benchmark                              | 0.3.0     | 0.4.0         | Change      |
+| :------------------------------------- | :-------- | :------------ | :---------- |
+| 500k-request simulated traffic (req/s) | 1,402,531 | **2,069,081** | **+47.5%**  |
+| High-concurrency burst (100×1000)      | 1,338,189 | **1,828,499** | **+36.6%**  |
+| Enterprise 120-route AST parse         | 32,755    | **41,650**    | +27.2%      |
+| 14-frame minified stack remap          | 184,254   | **286,576**   | +55.5%      |
+| Heavy JSON syntax colorizer (5.7 KB)   | 32,583    | **56,311**    | +72.8%      |
+| Adversarial 100 KB message payload     | 4,789     | **10,455**    | **+118.3%** |
+| Ultra-deep 100-frame stack trace       | 48,274    | **79,446**    | +64.6%      |
+| `formatLogEntry` (6-path mixed)        | 1,226,963 | **1,806,492** | +47.2%      |
+| `matchRoutePath` (dynamic params)      | 1,014,204 | **1,589,916** | +56.8%      |
+
+The compile-time trade-off is ~100 KB of additional binary size (still ~97%
+smaller than the pre-optimization dependency-heavy build).
 
 ### Binary Footprint
 
