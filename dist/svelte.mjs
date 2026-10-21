@@ -1,4 +1,4 @@
-import { i as createFrameworkLogger, n as browserLogger } from "./plugin-shared.mjs";
+import { i as browserLogger, o as createFrameworkLogger } from "./plugin-shared.mjs";
 //#region src/svelte.ts
 const { requestLogger, logger } = createFrameworkLogger("/@svelte-refresh");
 //#endregion

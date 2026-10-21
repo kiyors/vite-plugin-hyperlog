@@ -1,4 +1,4 @@
-import { r as RequestLoggerConfig, s as browserLogger } from "./plugin-shared.mjs";
+import { i as RequestLoggerConfig, l as browserLogger } from "./plugin-shared.mjs";
 //#region src/svelte.d.ts
 export declare const requestLogger: (config?: RequestLoggerConfig) => import("vite", { with: { "resolution-mode": "import" } }).Plugin, logger: (config?: RequestLoggerConfig) => import("vite", { with: { "resolution-mode": "import" } }).Plugin[];
 //#endregion

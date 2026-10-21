@@ -38,7 +38,21 @@ export declare function matchesExclusion(url: string, pattern: string): boolean
 
 export declare function matchRoutePath(path: string, routes: Array<string>): string | null
 
+/**
+ * Writes one NAPI call per request: classifies module requests for graph
+ * re-evaluation detection and evaluates the cached exclusion config in the
+ * same crossing. Returns `excluded = false` for unknown ids.
+ */
+export declare function observeRequest(id: number, url: string): RequestObservation
+
 export declare function parseRouteTreeAst(content: string): Array<string>
+
+/**
+ * Registers a plugin instance's exclusion configuration under a unique id so
+ * the per-request hot path can evaluate it without marshalling the JS array
+ * across the boundary every time. Re-registering an id replaces its config.
+ */
+export declare function registerExclusionConfig(id: number, exclusions: Array<string>, excludeModules: boolean): void
 
 export interface RemappedPosition {
   source?: string
@@ -50,5 +64,10 @@ export interface RemappedPosition {
 export declare function remapSourcePosition(sourcemapJson: string, line: number, column: number): RemappedPosition | null
 
 export declare function remapStackTrace(sourcemapJson: string, stack: string): string
+
+export interface RequestObservation {
+  excluded: boolean
+  isModule: boolean
+}
 
 export declare function shouldExcludeRequest(url: string, exclusions: Array<string>, excludeModules: boolean): boolean

@@ -589,7 +589,9 @@ var require_vite_plugin_logger = /* @__PURE__ */ __commonJSMin(((exports, module
 	module.exports.isModuleRequest = nativeBinding.isModuleRequest;
 	module.exports.matchesExclusion = nativeBinding.matchesExclusion;
 	module.exports.matchRoutePath = nativeBinding.matchRoutePath;
+	module.exports.observeRequest = nativeBinding.observeRequest;
 	module.exports.parseRouteTreeAst = nativeBinding.parseRouteTreeAst;
+	module.exports.registerExclusionConfig = nativeBinding.registerExclusionConfig;
 	module.exports.remapSourcePosition = nativeBinding.remapSourcePosition;
 	module.exports.remapStackTrace = nativeBinding.remapStackTrace;
 	module.exports.shouldExcludeRequest = nativeBinding.shouldExcludeRequest;
@@ -661,7 +663,167 @@ var GraphReevaluationDetector = class {
 	}
 };
 //#endregion
+//#region src/log-sink.ts
+/**
+* Central terminal output pipeline for the dev plugins.
+*
+* Three responsibilities, applied in order:
+*
+* 1. Color policy — the native formatters always emit ANSI. When the output
+*    target cannot render it (piped output, CI, captured test streams) or
+*    `NO_COLOR` is set, sequences are stripped here. `FORCE_COLOR` overrides
+*    both and keeps the colors, matching the de-facto CLI convention.
+* 2. Batching — a Vite request tick can emit several lines back to back and
+*    `console.log` pays synchronous write overhead per call. Lines are
+*    coalesced into one `process.stdout.write` per microtask, which keeps
+*    ordering inside a tick and cuts syscalls dramatically on busy pages.
+* 3. Machine mode — with `json: true` events are emitted as compact NDJSON
+*    rows instead of pretty lines, so the stream can be piped into `jq`,
+*    a file, or a log collector unchanged.
+*/
+const ANSI_PATTERN = /* @__PURE__ */ new RegExp("[\\u001B\\u009B][\\[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))", "g");
+/** Removes ANSI escape sequences (SGR, cursor movement, OSC...) from a string. */
+function stripAnsi(value) {
+	if (!ANSI_PATTERN.test(value)) return value;
+	ANSI_PATTERN.lastIndex = 0;
+	return value.replace(ANSI_PATTERN, "");
+}
+/**
+* `NO_COLOR` disables colors whenever it is set to any non-empty value
+* (https://no-color.org/). `FORCE_COLOR` wins over `NO_COLOR`, so CI setups can
+* force colors into a captured log with `FORCE_COLOR=1`. Unset `FORCE_COLOR`
+* returns `null`, meaning "honor TTY detection".
+*/
+function readNoColor() {
+	const value = process.env.NO_COLOR;
+	return value !== void 0 && value !== "";
+}
+function readForceColor() {
+	const value = process.env.FORCE_COLOR;
+	if (value === void 0 || value === "") return null;
+	return !(value === "0" || value === "false");
+}
+function createLogSink(options = {}) {
+	const writer = options.writer ?? process.stdout;
+	const isRealTerminal = writer === process.stdout && process.stdout.isTTY === true;
+	const forceColor = readForceColor();
+	const noColor = readNoColor();
+	const autoStrip = forceColor === false || !forceColor && (noColor || !isRealTerminal);
+	const stripColors = options.stripColors === false ? true : autoStrip;
+	const jsonMode = options.json === true;
+	let batch = [];
+	let flushQueued = false;
+	const flush = () => {
+		flushQueued = false;
+		if (batch.length === 0) return;
+		const out = `${batch.join("\n")}\n`;
+		batch = [];
+		try {
+			writer.write(out);
+		} catch {}
+	};
+	return {
+		json: jsonMode,
+		flush,
+		print(line, event) {
+			if (!line || line.length === 0) return;
+			const text = stripColors ? stripAnsi(line) : line;
+			let out;
+			if (jsonMode) out = JSON.stringify(event ?? {
+				kind: "line",
+				ts: Date.now(),
+				line: text
+			});
+			else out = text;
+			batch.push(out);
+			if (!flushQueued) {
+				flushQueued = true;
+				queueMicrotask(flush);
+			}
+		}
+	};
+}
+function createSummaryTracker(options = {}) {
+	const windowMs = Math.max(200, options.windowMs ?? 1e4);
+	const minSamples = Math.max(2, options.minSamples ?? 5);
+	let durations = [];
+	let windowStartAt = 0;
+	return {
+		record(durationMs) {
+			if (!Number.isFinite(durationMs) || durationMs < 0) return;
+			if (durations.length === 0) windowStartAt = performance.now();
+			durations.push(durationMs);
+			if (durations.length > 2048) durations = durations.slice(durations.length - 2048);
+		},
+		poll() {
+			if (durations.length === 0) return null;
+			if (performance.now() - windowStartAt < windowMs) return null;
+			const count = durations.length;
+			const sorted = durations.slice();
+			durations = [];
+			windowStartAt = performance.now();
+			if (count < minSamples) return null;
+			sorted.sort((a, b) => a - b);
+			const quantile = (p) => {
+				const rank = Math.max(0, Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1));
+				return sorted[rank] ?? 0;
+			};
+			return {
+				count,
+				p50: quantile(.5),
+				p95: quantile(.95),
+				p99: quantile(.99)
+			};
+		}
+	};
+}
+const DIM = "\x1B[2m";
+const RESET = "\x1B[0m";
+const COLOR_OK = "\x1B[32m";
+const COLOR_MID = "\x1B[33m";
+const COLOR_SLOW = "\x1B[31m";
+function latencyColor(ms) {
+	if (ms < 50) return COLOR_OK;
+	if (ms < 200) return COLOR_MID;
+	return COLOR_SLOW;
+}
+const formatMs = (value) => {
+	const text = value < 10 ? value.toFixed(2) : value < 100 ? value.toFixed(1) : Math.round(value).toFixed(0);
+	return text.endsWith(".0") ? text.slice(0, -2) : text;
+};
+/** Single dim footer line, e.g. `└─ last 10s · p50 1.2ms · p95 9.4ms · p99 31ms · 87 reqs`. */
+function formatSummaryLine(sample, windowMs) {
+	const fmt = (value) => `${latencyColor(value)}${formatMs(value)}ms${RESET}`;
+	return `└─ ${DIM}${Math.round(windowMs / 1e3)}s${RESET} p50 ${fmt(sample.p50)} · p95 ${fmt(sample.p95)} · p99 ${fmt(sample.p99)} · ${DIM}${sample.count} reqs${RESET}`;
+}
+//#endregion
 //#region src/server-fn-utils.ts
+/**
+* Concatenates captured chunks into one Buffer.
+*
+* Buffer chunks are used as-is; string chunks are encoded at the end so that a
+* multi-byte character split across separate string chunks still joins into a
+* single complete character (string concatenation preserves the decoder's
+* boundary handling).
+*/
+function concatChunks(chunks) {
+	if (chunks.length === 0) return Buffer.alloc(0);
+	if (chunks.length === 1) {
+		const [only] = chunks;
+		return Buffer.isBuffer(only) ? only : Buffer.from(only, "utf8");
+	}
+	const parts = [];
+	let pendingStrings = [];
+	for (const chunk of chunks) if (Buffer.isBuffer(chunk)) {
+		if (pendingStrings.length > 0) {
+			parts.push(Buffer.from(pendingStrings.join(""), "utf8"));
+			pendingStrings = [];
+		}
+		parts.push(chunk);
+	} else pendingStrings.push(chunk);
+	if (pendingStrings.length > 0) parts.push(Buffer.from(pendingStrings.join(""), "utf8"));
+	return Buffer.concat(parts);
+}
 /**
 * Safely format any JavaScript value (including circular objects, errors, FormData)
 * into a compact, human-readable string representation without external dependencies.
@@ -803,7 +965,7 @@ function parseServerFnArgs(url, method, headers, bodyBytes) {
 			return;
 		}
 		if (bodyBytes.length === 0) return void 0;
-		const rawBody = Buffer.concat(bodyBytes).toString("utf-8");
+		const rawBody = concatChunks(bodyBytes).toString("utf-8");
 		if (!rawBody.trim()) return void 0;
 		const contentType = String(headers["content-type"] || "");
 		if (contentType.includes("application/json") || rawBody.startsWith("{") || rawBody.startsWith("[")) try {
@@ -830,7 +992,7 @@ function parseServerFnArgs(url, method, headers, bodyBytes) {
 function parseServerFnResult(statusCode, resBytes) {
 	try {
 		if (resBytes.length === 0) return void 0;
-		const rawRes = Buffer.concat(resBytes).toString("utf-8");
+		const rawRes = concatChunks(resBytes).toString("utf-8");
 		if (!rawRes.trim()) return void 0;
 		try {
 			const parsed = JSON.parse(rawRes);
@@ -845,6 +1007,115 @@ function parseServerFnResult(statusCode, resBytes) {
 		return;
 	}
 }
+/** Maximum captured request/response body size per server-function request. */
+const MAX_CAPTURE_BYTES = 65536;
+/**
+* Attaches body capture to a server-function request/response pair.
+*
+* Requests are observed with a plain `"data"` listener instead of monkey-patching
+* `req.emit`: the listener is the standard middleware pattern (same one that
+* body-parsing middleware itself uses) and avoids replacing a function on every
+* request. Chunks are stored in their original representation and joined once at
+* logging time (`concatChunks`), so a multi-byte character split across chunks
+* survives.
+*/
+function captureServerFnBodies(req, res, captureArgs, captureReturns) {
+	const bodyBytes = [];
+	const resBytes = [];
+	let totalBodyLen = 0;
+	let totalResLen = 0;
+	if (captureArgs) req.on("data", (chunk) => {
+		if (chunk == null || totalBodyLen >= 65536) return;
+		bodyBytes.push(chunk);
+		totalBodyLen += chunk.length;
+	});
+	if (captureReturns) {
+		const origWrite = res.write;
+		const origEnd = res.end;
+		res.write = function(chunk, ...args) {
+			if (chunk && totalResLen < 65536) {
+				resBytes.push(chunk);
+				totalResLen += chunk.length;
+			}
+			return origWrite.apply(this, [chunk, ...args]);
+		};
+		res.end = function(chunk, ...args) {
+			if (chunk && totalResLen < 65536) {
+				resBytes.push(chunk);
+				totalResLen += chunk.length;
+			}
+			return origEnd.apply(this, [chunk, ...args]);
+		};
+	}
+	return {
+		bodyBytes,
+		resBytes
+	};
+}
+/**
+* Formats and prints one finished server-function call (plus the enclosing
+* request line in `tree` mode) and pushes it to the DevTools HUD clients.
+*
+* Shared by both adapters so the tree/standalone rendering and the HUD payload
+* cannot drift apart again.
+*/
+function logServerFnCall(options) {
+	const { sink, details, status, durationMs, parsedArgs, parsedResult, outputFormat, limits, server, url, method } = options;
+	const formattedArgs = parsedArgs !== void 0 ? formatPayload(parsedArgs, limits) : null;
+	const formattedResult = parsedResult !== void 0 ? formatPayload(parsedResult, limits) : null;
+	const ts = Date.now();
+	if (outputFormat === "tree") {
+		const requestLine = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, null, null, null, null);
+		sink.print(requestLine, {
+			kind: "request",
+			ts,
+			url,
+			method,
+			status,
+			durationMs
+		});
+		const fnLine = (0, import_vite_plugin_logger.formatServerFnLog)(details.functionName, details.filePath, details.lineNumber ?? null, status, durationMs, formattedArgs, formattedResult, true, null);
+		sink.print(fnLine, {
+			kind: "server-fn",
+			ts,
+			name: details.functionName,
+			file: details.filePath,
+			line: details.lineNumber ?? null,
+			status,
+			durationMs,
+			args: parsedArgs,
+			result: parsedResult
+		});
+	} else {
+		const fnLine = (0, import_vite_plugin_logger.formatServerFnLog)(details.functionName, details.filePath, details.lineNumber ?? null, status, durationMs, formattedArgs, formattedResult, false, null);
+		sink.print(fnLine, {
+			kind: "server-fn",
+			ts,
+			name: details.functionName,
+			file: details.filePath,
+			line: details.lineNumber ?? null,
+			status,
+			durationMs,
+			args: parsedArgs,
+			result: parsedResult
+		});
+	}
+	try {
+		server?.ws?.send({
+			type: "custom",
+			event: "vite-plugin-hyperlog:server-fn",
+			data: {
+				name: details.functionName,
+				file: details.filePath,
+				status,
+				durationMs,
+				args: parsedArgs,
+				result: parsedResult,
+				browserConsole: options.browserConsole === true
+			}
+		});
+	} catch {}
+}
 //#endregion
 //#region src/ui.ts
 /**
@@ -856,6 +1127,11 @@ function getServerFunctionOverlayScript() {
 }
 //#endregion
 //#region src/plugin.ts
+/**
+* Default request URL exclusions shared by every adapter. Root-anchored, so
+* plugin code (e.g. `/src/foo.ts`) is never caught. TanStack layers its own
+* extra patterns on top via `TANSTACK_EXCLUDE_PATTERNS`.
+*/
 const DEFAULT_EXCLUDE_URLS = [
 	"?import",
 	"vite_ping",
@@ -869,6 +1145,17 @@ const DEFAULT_EXCLUDE_URLS = [
 ];
 /** Maximum accepted body size for the SPA route reporting endpoint. */
 const MAX_ROUTE_BODY_BYTES = 65536;
+let nextExclusionConfigId = 1;
+/**
+* Allocates a unique plugin-instance id for the native exclusion cache.
+*
+* Each `requestLogger` instance registers its own exclusion config under this
+* id, so several plugins can coexist in one process without clobbering each
+* other's configuration.
+*/
+function allocateExclusionConfigId() {
+	return nextExclusionConfigId++;
+}
 /**
 * Collects a request body as bytes.
 *
@@ -904,6 +1191,41 @@ function readBody(req, res, limit) {
 		req.on("aborted", () => done(null));
 	});
 }
+/**
+* Same-origin guard for the SPA route reporting endpoint.
+*
+* A browser `fetch`/XHR always sends an `Origin` header, so cross-site pages (or
+* a DNS-rebinding attacker hitting the dev server directly) can be identified
+* by shipping their requests with an `Origin` that does not match the `Host`
+* the dev server received the request on. Those are *remote* forgeries and are
+* rejected; same-page clients match, and header-less non-browser clients
+* (curl, IDE tools) are unaffected.
+*/
+function isSameOriginDevRequest(origin, host) {
+	if (!origin || !host) return false;
+	let originHost;
+	try {
+		originHost = new URL(origin).host;
+	} catch {
+		return false;
+	}
+	return originHost.toLowerCase() === host.toLowerCase();
+}
+/** Sink-backed route reporter shared by the HTTP endpoint and WS handlers. */
+function routeEventSinkHandler(sink) {
+	return (data) => {
+		const logString = (0, import_vite_plugin_logger.formatRouteLog)(data.routeId || data.path || "", data.path || "", data.params ?? null, data.durationMs ? Number(data.durationMs) : null, Boolean(data.isPreload));
+		sink.print(logString, {
+			kind: "route",
+			ts: Date.now(),
+			routeId: data.routeId ?? null,
+			path: data.path ?? null,
+			params: data.params ?? null,
+			durationMs: data.durationMs ? Number(data.durationMs) : null,
+			isPreload: Boolean(data.isPreload)
+		});
+	};
+}
 /** Logs one client-reported SPA route transition. */
 function logRouteEvent(data) {
 	const logString = (0, import_vite_plugin_logger.formatRouteLog)(data.routeId || data.path || "", data.path || "", data.params ?? null, data.durationMs ? Number(data.durationMs) : null, Boolean(data.isPreload));
@@ -923,6 +1245,12 @@ function attachRouteEndpoint(server, onRoute = logRouteEvent) {
 	routeEndpointServers.add(server);
 	server.middlewares.use((req, res, next) => {
 		if (req.url !== "/__hyperlog/route" || req.method !== "POST") return next();
+		const originHeader = req.headers?.origin;
+		if (originHeader && !isSameOriginDevRequest(originHeader, req.headers?.host)) {
+			res.statusCode = 403;
+			res.end();
+			return;
+		}
 		readBody(req, res, MAX_ROUTE_BODY_BYTES).then((body) => {
 			if (body) try {
 				onRoute(JSON.parse(body.toString("utf8")));
@@ -950,73 +1278,79 @@ function requestLogger(config) {
 	];
 	const excludedMethods = config?.excludeReqType ? new Set(config.excludeReqType.map((type) => type.toUpperCase())) : null;
 	const resolveRoute = config?.resolveRoute;
+	const jsonMode = config?.json === true;
+	const summaryConfig = config?.summaryStats;
+	const summaryEnabled = summaryConfig !== false;
+	const summaryOptions = summaryEnabled && summaryConfig !== true ? summaryConfig ?? {} : {};
+	const summaryWindowMs = Math.max(200, summaryOptions.windowMs ?? 1e4);
+	const exclusionConfigId = allocateExclusionConfigId();
+	(0, import_vite_plugin_logger.registerExclusionConfig)(exclusionConfigId, exclusions, excludeModules);
 	return {
 		name: "vite-plugin-request-logging-rust",
 		apply: "serve",
 		configureServer(server) {
 			const repeats = /* @__PURE__ */ new Map();
+			const sink = createLogSink({
+				json: jsonMode,
+				stripColors: config?.stripColors
+			});
+			const summary = summaryEnabled ? createSummaryTracker(summaryOptions) : null;
+			let summaryFlushQueued = false;
 			const flushRepeat = (key, entry) => {
 				repeats.delete(key);
 				if (entry.count <= 1) return;
-				const summary = (0, import_vite_plugin_logger.formatLogEntry)(entry.url, entry.method, entry.status, entry.totalDurationMs, null, null, null, entry.count);
-				if (summary) console.log(summary);
+				const repeatLine = (0, import_vite_plugin_logger.formatLogEntry)(entry.url, entry.method, entry.status, entry.totalDurationMs, null, null, null, entry.count);
+				sink.print(repeatLine, {
+					kind: "request",
+					ts: Date.now(),
+					url: entry.url,
+					method: entry.method,
+					status: entry.status,
+					durationMs: entry.totalDurationMs,
+					repeat: entry.count
+				});
 			};
 			server.httpServer?.on("close", () => {
 				for (const [key, entry] of repeats) {
 					clearTimeout(entry.timer);
 					flushRepeat(key, entry);
 				}
+				sink.flush();
 			});
 			const detector = new GraphReevaluationDetector();
-			const observe = (url) => {
-				const report = detector.observe((0, import_vite_plugin_logger.isModuleRequest)(url), url);
-				if (report) console.log((0, import_vite_plugin_logger.formatGraphReevaluation)(report.distinctModules, report.repeatedRequests, report.windowMs));
+			const observe = (isModule, url) => {
+				const report = detector.observe(isModule, url);
+				if (report) sink.print((0, import_vite_plugin_logger.formatGraphReevaluation)(report.distinctModules, report.repeatedRequests, report.windowMs), {
+					kind: "graph",
+					ts: Date.now(),
+					distinctModules: report.distinctModules,
+					repeatedRequests: report.repeatedRequests,
+					windowMs: report.windowMs
+				});
 			};
-			attachRouteEndpoint(server, logRouteEvent);
+			attachRouteEndpoint(server, routeEventSinkHandler(sink));
+			/** Compact JSON payload for one HTTP result. */
+			const requestEvent = (url, method, status, durationMs, contentLength, redirectLocation, routeName, count) => ({
+				kind: "request",
+				ts: Date.now(),
+				url,
+				method,
+				status,
+				durationMs,
+				contentLength,
+				location: redirectLocation,
+				route: routeName,
+				repeat: count
+			});
 			server.middlewares.use((req, res, next) => {
 				const url = req.originalUrl || "";
 				const method = req.method || "GET";
-				if (detectGraphReevaluation) observe(url);
+				const observation = (0, import_vite_plugin_logger.observeRequest)(exclusionConfigId, url);
+				if (detectGraphReevaluation) observe(observation.isModule, url);
 				if (excludedMethods && excludedMethods.has(method.toUpperCase())) return next();
-				if ((0, import_vite_plugin_logger.shouldExcludeRequest)(url, exclusions, excludeModules)) return next();
+				if (observation.excluded) return next();
 				const serverFnDetails = isServerFnLoggingEnabled ? detectServerFunction(url, req.headers, serverFnConfig?.resolveServerFn, req) : null;
-				const bodyBytes = [];
-				let totalBodyLen = 0;
-				const MAX_CAPTURE_BYTES = 65536;
-				if (serverFnDetails && serverFnConfig?.logArgs !== false && method !== "GET") {
-					const origEmit = req.emit;
-					req.emit = function(event, ...args) {
-						if (event === "data" && totalBodyLen < MAX_CAPTURE_BYTES) {
-							const chunk = args[0];
-							const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-							bodyBytes.push(b);
-							totalBodyLen += b.length;
-						}
-						return origEmit.apply(this, [event, ...args]);
-					};
-				}
-				const resBytes = [];
-				let totalResLen = 0;
-				if (serverFnDetails && serverFnConfig?.logReturns !== false) {
-					const origWrite = res.write;
-					const origEnd = res.end;
-					res.write = function(chunk, ...args) {
-						if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
-							const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-							resBytes.push(b);
-							totalResLen += b.length;
-						}
-						return origWrite.apply(this, [chunk, ...args]);
-					};
-					res.end = function(chunk, ...args) {
-						if (chunk && totalResLen < MAX_CAPTURE_BYTES) {
-							const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-							resBytes.push(b);
-							totalResLen += b.length;
-						}
-						return origEnd.apply(this, [chunk, ...args]);
-					};
-				}
+				const { bodyBytes, resBytes } = captureServerFnBodies(req, res, serverFnDetails !== null && serverFnConfig?.logArgs !== false && method !== "GET", serverFnDetails !== null && serverFnConfig?.logReturns !== false);
 				const start = performance.now();
 				let logged = false;
 				const logIt = (aborted) => {
@@ -1026,53 +1360,53 @@ function requestLogger(config) {
 					res.removeListener("close", onClose);
 					const durationMs = performance.now() - start;
 					const status = aborted && !res.writableEnded ? 499 : res.statusCode;
+					if (summary) {
+						summary.record(durationMs);
+						if (!summaryFlushQueued) {
+							summaryFlushQueued = true;
+							queueMicrotask(() => {
+								summaryFlushQueued = false;
+								const sample = summary.poll();
+								if (sample) sink.print(formatSummaryLine(sample, summaryWindowMs), {
+									kind: "summary",
+									ts: Date.now(),
+									windowMs: summaryWindowMs,
+									...sample
+								});
+							});
+						}
+					}
 					const cl = res.getHeader("content-length");
 					const contentLength = cl ? Number(cl) : null;
 					const location = res.getHeader("location");
 					const redirectLocation = location ? String(location) : null;
-					const routeName = resolveRoute ? resolveRoute(url) : null;
+					const routeName = resolveRoute ? resolveRoute(url) ?? null : null;
 					if (serverFnDetails) {
 						const parsedArgs = serverFnConfig?.logArgs !== false ? parseServerFnArgs(url, method, req.headers, bodyBytes) : void 0;
 						const parsedResult = serverFnConfig?.logReturns !== false ? parseServerFnResult(status, resBytes) : void 0;
-						const formattedArgs = parsedArgs !== void 0 ? formatPayload(parsedArgs, {
-							maxDepth: serverFnConfig?.maxDepth,
-							maxBreadth: serverFnConfig?.maxBreadth,
-							maxStringLength: serverFnConfig?.maxStringLength
-						}) : null;
-						const formattedResult = parsedResult !== void 0 ? formatPayload(parsedResult, {
-							maxDepth: serverFnConfig?.maxDepth,
-							maxBreadth: serverFnConfig?.maxBreadth,
-							maxStringLength: serverFnConfig?.maxStringLength
-						}) : null;
-						if (serverFnFormat === "tree") {
-							const requestLine = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
-							if (requestLine) console.log(requestLine);
-							const fnLine = (0, import_vite_plugin_logger.formatServerFnLog)(serverFnDetails.functionName, serverFnDetails.filePath, serverFnDetails.lineNumber ?? null, status, durationMs, formattedArgs, formattedResult, true, null);
-							if (fnLine) console.log(fnLine);
-						} else {
-							const fnLine = (0, import_vite_plugin_logger.formatServerFnLog)(serverFnDetails.functionName, serverFnDetails.filePath, serverFnDetails.lineNumber ?? null, status, durationMs, formattedArgs, formattedResult, false, null);
-							if (fnLine) console.log(fnLine);
-						}
-						try {
-							server.ws.send({
-								type: "custom",
-								event: "vite-plugin-hyperlog:server-fn",
-								data: {
-									name: serverFnDetails.functionName,
-									file: serverFnDetails.filePath,
-									status,
-									durationMs,
-									args: parsedArgs,
-									result: parsedResult,
-									browserConsole: Boolean(serverFnConfig?.browserConsole)
-								}
-							});
-						} catch {}
+						logServerFnCall({
+							server,
+							sink,
+							details: serverFnDetails,
+							url,
+							method,
+							status,
+							durationMs,
+							parsedArgs,
+							parsedResult,
+							outputFormat: serverFnFormat === "tree" ? "tree" : "standalone",
+							limits: {
+								maxDepth: serverFnConfig?.maxDepth,
+								maxBreadth: serverFnConfig?.maxBreadth,
+								maxStringLength: serverFnConfig?.maxStringLength
+							},
+							browserConsole: serverFnConfig?.browserConsole === true
+						});
 						return;
 					}
 					if (!groupRepeats) {
 						const line = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
-						if (line) console.log(line);
+						sink.print(line, requestEvent(url, method, status, durationMs, contentLength, redirectLocation, routeName, null));
 						return;
 					}
 					const key = `${method} ${url}`;
@@ -1086,7 +1420,7 @@ function requestLogger(config) {
 						return;
 					}
 					const line = (0, import_vite_plugin_logger.formatLogEntry)(url, method, status, durationMs, contentLength, redirectLocation, routeName, null);
-					if (line) console.log(line);
+					sink.print(line, requestEvent(url, method, status, durationMs, contentLength, redirectLocation, routeName, null));
 					const entry = {
 						timer: setTimeout(() => {}, 0),
 						count: 1,
@@ -1151,20 +1485,55 @@ function browserLogger(config) {
 			}];
 		},
 		configureServer(server) {
+			const sink = createLogSink({
+				json: config?.json === true,
+				stripColors: config?.stripColors
+			});
 			const pendingBrowserLogs = /* @__PURE__ */ new Map();
 			const MAX_PENDING_LOGS = 250;
+			const PRINT_BUDGET_PER_SECOND = 400;
+			let budgetStartAt = performance.now();
+			let budgetUsed = 0;
+			let budgetSuppressed = 0;
 			const flushBrowserLog = (key) => {
 				const entry = pendingBrowserLogs.get(key);
 				if (!entry) return;
 				pendingBrowserLogs.delete(key);
+				const now = performance.now();
+				if (now - budgetStartAt >= 1e3) {
+					budgetStartAt = now;
+					budgetUsed = 0;
+					if (budgetSuppressed > 0) {
+						const suppressed = budgetSuppressed;
+						budgetSuppressed = 0;
+						sink.print(`[hyperlog] ${suppressed} browser log rows suppressed (rate limit)`, {
+							kind: "browser",
+							ts: Date.now(),
+							suppressed
+						});
+					}
+				}
+				if (budgetUsed >= PRINT_BUDGET_PER_SECOND) {
+					budgetSuppressed += entry.count;
+					return;
+				}
+				budgetUsed += entry.count;
 				const logString = (0, import_vite_plugin_logger.formatBrowserLog)(entry.type, entry.message, entry.caller, entry.count > 1 ? entry.count : null);
-				if (logString) console.log(logString);
+				sink.print(logString, {
+					kind: "browser",
+					ts: Date.now(),
+					type: entry.type,
+					message: entry.message,
+					caller: entry.caller,
+					count: entry.count > 1 ? entry.count : null
+				});
 			};
 			server.httpServer?.on("close", () => {
 				for (const [key, entry] of pendingBrowserLogs.entries()) {
 					clearTimeout(entry.timer);
 					flushBrowserLog(key);
 				}
+				sink.flush();
 			});
 			const handleBrowserLog = (data) => {
 				const { type, message, caller } = data;
@@ -1196,7 +1565,7 @@ function browserLogger(config) {
 				pendingBrowserLogs.set(key, entry);
 			};
 			server.ws.on("vite-plugin-hyperlog:browser-log", handleBrowserLog);
-			attachRouteEndpoint(server, logRouteEvent);
+			attachRouteEndpoint(server, routeEventSinkHandler(sink));
 		}
 	};
 }
@@ -1215,7 +1584,11 @@ function logger(config) {
 	const sf = config?.serverFunctions;
 	const sfConfig = Boolean(sf) && sf !== true ? sf : void 0;
 	const uiEnabled = config?.serverFunctions !== false && sfConfig?.ui !== false;
-	return [requestLogger(config), browserLogger({ serverFunctionUi: uiEnabled })];
+	return [requestLogger(config), browserLogger({
+		serverFunctionUi: uiEnabled,
+		json: config?.json === true,
+		stripColors: config?.stripColors
+	})];
 }
 /**
 * Factory helper for framework-specific adapters (React, Solid, Svelte, Vue)
@@ -1232,7 +1605,11 @@ function createFrameworkLogger(defaultExclude) {
 		const sf = config?.serverFunctions;
 		const sfConfig = Boolean(sf) && sf !== true ? sf : void 0;
 		const uiEnabled = config?.serverFunctions !== false && sfConfig?.ui !== false;
-		return [reqLogger(config), browserLogger({ serverFunctionUi: uiEnabled })];
+		return [reqLogger(config), browserLogger({
+			serverFunctionUi: uiEnabled,
+			json: config?.json === true,
+			stripColors: config?.stripColors
+		})];
 	}
 	return {
 		requestLogger: reqLogger,
@@ -1240,4 +1617,4 @@ function createFrameworkLogger(defaultExclude) {
 	};
 }
 //#endregion
-export { import_vite_plugin_logger as a, requestLogger as c, formatPayload as d, parseServerFnArgs as f, createFrameworkLogger as i, getServerFunctionOverlayScript as l, require_vite_plugin_logger as m, browserLogger as n, logRouteEvent as o, parseServerFnResult as p, browserLoggerScriptSrc as r, logger as s, attachRouteEndpoint as t, detectServerFunction as u };
+export { readForceColor as C, require_vite_plugin_logger as E, formatSummaryLine as S, stripAnsi as T, logServerFnCall as _, browserLoggerScriptSrc as a, createLogSink as b, logRouteEvent as c, routeEventSinkHandler as d, getServerFunctionOverlayScript as f, formatPayload as g, detectServerFunction as h, browserLogger as i, logger as l, captureServerFnBodies as m, allocateExclusionConfigId as n, createFrameworkLogger as o, MAX_CAPTURE_BYTES as p, attachRouteEndpoint as r, import_vite_plugin_logger as s, DEFAULT_EXCLUDE_URLS as t, requestLogger as u, parseServerFnArgs as v, readNoColor as w, createSummaryTracker as x, parseServerFnResult as y };

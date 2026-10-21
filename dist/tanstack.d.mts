@@ -1,4 +1,4 @@
-import { r as RequestLoggerConfig, s as browserLogger } from "./plugin-shared.mjs";
+import { i as RequestLoggerConfig, l as browserLogger } from "./plugin-shared.mjs";
 import { Plugin } from "vite";
 //#region src/tanstack.d.ts
 export interface TanStackLoggerConfig extends RequestLoggerConfig {
