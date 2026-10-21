@@ -112,6 +112,21 @@ function sendRouteEvent(payload: {
   }
 }
 
+/** Drops root matches and reports the deepest remaining match (or null). */
+function pickReportableMatch(matches: any[]): any {
+  const valid = matches.filter((m: any) => m && (m.routeId || m.id) && m.routeId !== "__root__" && m.id !== "__root__");
+  return valid[valid.length - 1];
+}
+
+/** Extracts a terminal-friendly route id, dropping a trailing slash. */
+function extractRouteId(match: any, fallback: string | null | undefined, pathname: string): string {
+  let rawRouteId = match?.routeId || match?.id || match?.route?.id || fallback || pathname;
+  if (rawRouteId && rawRouteId.length > 1 && rawRouteId.endsWith("/")) {
+    rawRouteId = rawRouteId.slice(0, -1);
+  }
+  return rawRouteId;
+}
+
 /**
  * Client-side subscriber for TanStack Router.
  * Import this in your client entry or router.tsx to log SPA navigations and preloads to the terminal.
@@ -162,16 +177,8 @@ export function registerTanStackRouterLogger(router: TanStackRouterLike): void {
         const matches =
           router.state?.matches && router.state.matches.length > 0 ? router.state.matches : event?.matches || [];
 
-        const validMatches = matches.filter(
-          (m: any) => m && (m.routeId || m.id) && m.routeId !== "__root__" && m.id !== "__root__",
-        );
-        const lastMatch = validMatches[validMatches.length - 1];
-
-        let rawRouteId = lastMatch?.routeId || lastMatch?.id || lastMatch?.route?.id || toLocation.href || pathname;
-
-        if (rawRouteId && rawRouteId.length > 1 && rawRouteId.endsWith("/")) {
-          rawRouteId = rawRouteId.slice(0, -1);
-        }
+        const lastMatch = pickReportableMatch(matches);
+        const rawRouteId = extractRouteId(lastMatch, toLocation.href ?? null, pathname);
 
         const paramsObj =
           toLocation.params && Object.keys(toLocation.params).length > 0
@@ -207,15 +214,8 @@ export function registerTanStackRouterLogger(router: TanStackRouterLike): void {
 
         const pathname = toLocation.pathname || "/";
         const matches = event?.matches || [];
-        const validMatches = matches.filter(
-          (m: any) => m && (m.routeId || m.id) && m.routeId !== "__root__" && m.id !== "__root__",
-        );
-        const lastMatch = validMatches[validMatches.length - 1];
-        let rawRouteId = lastMatch?.routeId || lastMatch?.id || lastMatch?.route?.id || event?.routeId || pathname;
-
-        if (rawRouteId && rawRouteId.length > 1 && rawRouteId.endsWith("/")) {
-          rawRouteId = rawRouteId.slice(0, -1);
-        }
+        const lastMatch = pickReportableMatch(matches);
+        const rawRouteId = extractRouteId(lastMatch, event?.routeId ?? null, pathname);
 
         sendRouteEvent({
           routeId: rawRouteId,

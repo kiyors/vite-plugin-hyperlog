@@ -1,5 +1,8 @@
 import type { IncomingHttpHeaders, IncomingMessage } from "node:http";
 
+import { decodeServerFn, formatLogEntry, formatServerFnLog } from "../index.js";
+import type { LogSink } from "./log-sink";
+
 /**
  * A captured body chunk in its original representation.
  *
@@ -189,9 +192,6 @@ export interface ServerFnDetails {
   filePath: string;
   lineNumber?: number;
 }
-
-import { decodeServerFn, formatLogEntry, formatServerFnLog } from "../index.js";
-import type { LogSink } from "./log-sink";
 
 /**
  * Decodes TanStack Start base64 payload into function and file path.

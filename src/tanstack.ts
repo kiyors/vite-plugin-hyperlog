@@ -10,7 +10,13 @@ import {
   parseRouteTreeAst,
   registerExclusionConfig,
 } from "../index.js";
-import { createLogSink, createSummaryTracker, formatSummaryLine, type SummaryOptions } from "./log-sink";
+import {
+  buildRequestEvent,
+  createLogSink,
+  createSummaryTracker,
+  formatSummaryLine,
+  type SummaryOptions,
+} from "./log-sink";
 import {
   allocateExclusionConfigId,
   attachRouteEndpoint,
@@ -267,18 +273,15 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
           entry.routeName,
           entry.count > 1 ? entry.count : null,
         );
-        sink.print(logString, {
-          kind: "request",
-          ts: Date.now(),
-          url: entry.url,
-          method: entry.method,
-          status: entry.status,
-          durationMs: avgDuration,
-          contentLength: entry.contentLength,
-          location: entry.redirectLocation,
-          route: entry.routeName,
-          repeat: entry.count > 1 ? entry.count : null,
-        });
+        sink.print(
+          logString,
+          buildRequestEvent(entry.url, entry.method, entry.status, avgDuration, {
+            contentLength: entry.contentLength,
+            location: entry.redirectLocation,
+            route: entry.routeName,
+            repeat: entry.count > 1 ? entry.count : null,
+          }),
+        );
       };
 
       // Load routeTree.gen.ts if available
@@ -397,20 +400,6 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
 
           const isServerFn = url.startsWith("/_serverFn");
 
-          /** Compact JSON payload for one HTTP result. */
-          const buildEvent = (count: number | null) => ({
-            kind: "request" as const,
-            ts: Date.now(),
-            url,
-            method,
-            status,
-            durationMs,
-            contentLength,
-            location: redirectLocation,
-            route: routeName,
-            repeat: count,
-          });
-
           if (serverFnDetails) {
             const parsedArgs =
               serverFnConfig?.logArgs !== false ? parseServerFnArgs(url, method, req.headers, bodyBytes) : undefined;
@@ -490,7 +479,14 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
             null,
           );
 
-          sink.print(logString, buildEvent(null));
+          sink.print(
+            logString,
+            buildRequestEvent(url, method, status, durationMs, {
+              contentLength,
+              location: redirectLocation,
+              route: routeName,
+            }),
+          );
         };
 
         const onFinish = () => logIt(false);

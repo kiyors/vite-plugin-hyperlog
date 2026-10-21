@@ -14,10 +14,10 @@ import {
 } from "../index.js";
 import { GraphReevaluationDetector } from "./graph";
 import {
+  buildRequestEvent,
   createLogSink,
   createSummaryTracker,
   formatSummaryLine,
-  type JsonEvent,
   type LogSink,
   type SummaryOptions,
 } from "./log-sink";
@@ -344,16 +344,20 @@ export function routeEventSinkHandler(sink: LogSink): (data: RoutePayload) => vo
   };
 }
 
+/**
+ * Lazily-created module sink for standalone callers (direct `attachRouteEndpoint`
+ * use, custom integrations) so even those prints follow the same color policy,
+ * batching, and NDJSON shape as the plugin-managed output.
+ */
+let fallbackSink: LogSink | null = null;
+function moduleSink(): LogSink {
+  if (!fallbackSink) fallbackSink = createLogSink();
+  return fallbackSink;
+}
+
 /** Logs one client-reported SPA route transition. */
 export function logRouteEvent(data: RoutePayload): void {
-  const logString = formatRouteLog(
-    data.routeId || data.path || "",
-    data.path || "",
-    data.params ?? null,
-    data.durationMs ? Number(data.durationMs) : null,
-    Boolean(data.isPreload),
-  );
-  if (logString) console.log(logString);
+  routeEventSinkHandler(moduleSink())(data);
 }
 
 /**
@@ -471,15 +475,10 @@ export function requestLogger(config?: RequestLoggerConfig): Plugin {
           null,
           entry.count,
         );
-        sink.print(repeatLine, {
-          kind: "request",
-          ts: Date.now(),
-          url: entry.url,
-          method: entry.method,
-          status: entry.status,
-          durationMs: entry.totalDurationMs,
-          repeat: entry.count,
-        });
+        sink.print(
+          repeatLine,
+          buildRequestEvent(entry.url, entry.method, entry.status, entry.totalDurationMs, { repeat: entry.count }),
+        );
       };
 
       server.httpServer?.on("close", () => {
@@ -511,29 +510,6 @@ export function requestLogger(config?: RequestLoggerConfig): Plugin {
       const handleRoute = routeEventSinkHandler(sink);
 
       attachRouteEndpoint(server, handleRoute);
-
-      /** Compact JSON payload for one HTTP result. */
-      const requestEvent = (
-        url: string,
-        method: string,
-        status: number,
-        durationMs: number,
-        contentLength: number | null,
-        redirectLocation: string | null,
-        routeName: string | null,
-        count: number | null,
-      ): JsonEvent => ({
-        kind: "request",
-        ts: Date.now(),
-        url,
-        method,
-        status,
-        durationMs,
-        contentLength,
-        location: redirectLocation,
-        route: routeName,
-        repeat: count,
-      });
 
       server.middlewares.use((req, res, next) => {
         const url = req.originalUrl || "";
@@ -654,7 +630,11 @@ export function requestLogger(config?: RequestLoggerConfig): Plugin {
             );
             sink.print(
               line,
-              requestEvent(url, method, status, durationMs, contentLength, redirectLocation, routeName, null),
+              buildRequestEvent(url, method, status, durationMs, {
+                contentLength,
+                location: redirectLocation,
+                route: routeName,
+              }),
             );
             return;
           }
@@ -682,7 +662,11 @@ export function requestLogger(config?: RequestLoggerConfig): Plugin {
           );
           sink.print(
             line,
-            requestEvent(url, method, status, durationMs, contentLength, redirectLocation, routeName, null),
+            buildRequestEvent(url, method, status, durationMs, {
+              contentLength,
+              location: redirectLocation,
+              route: routeName,
+            }),
           );
 
           const entry: PendingRepeat = {

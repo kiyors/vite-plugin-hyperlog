@@ -116,6 +116,24 @@ export interface RawLineEvent {
   line: string;
 }
 
+export interface RequestEventExtras {
+  contentLength?: number | null;
+  location?: string | null;
+  route?: string | null;
+  repeat?: number | null;
+}
+
+/** Builds the canonical NDJSON row for one HTTP result, shared by every adapter. */
+export function buildRequestEvent(
+  url: string,
+  method: string,
+  status: number,
+  durationMs: number,
+  extras: RequestEventExtras = {},
+): RequestLogEvent {
+  return { kind: "request", ts: Date.now(), url, method, status, durationMs, ...extras };
+}
+
 export type JsonEvent =
   | RequestLogEvent
   | ServerFnLogEvent
