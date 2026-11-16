@@ -142,6 +142,13 @@ export interface ServerFunctionConfig {
 
 export interface BrowserLoggerConfig {
   /**
+   * Report client-side SPA navigations to the terminal by observing History API
+   * changes (pushState / replaceState / popstate). Frameworks with their own
+   * router reporter (TanStack Start) disable this to avoid duplicate lines.
+   * @default true
+   */
+  spaRoutes?: boolean;
+  /**
    * Enable the in-browser floating DevTools overlay and drawer for inspecting server functions.
    * @default true
    */
@@ -176,6 +183,13 @@ export interface RequestLoggerConfig {
    * @default false
    */
   excludeApis?: boolean;
+  /**
+   * Filter out static asset requests (images, fonts, stylesheets, etc.) from
+   * terminal logs. Vite re-requests dozens on every page load, almost all
+   * `304`s, which buries routes and server functions. Set to `false` to see
+   * them again. Default: true.
+   */
+  excludeAssets?: boolean;
   /**
    * Collapse repeated requests to the same URL within `repeatWindowMs` into a
    * single trailing `(xN)` line instead of printing one line each.
@@ -237,6 +251,38 @@ export const DEFAULT_EXCLUDE_URLS = [
   "/.well-known",
   "/__hyperlog",
 ];
+
+/**
+ * Static asset extensions served by Vite during development. These arrive in
+ * bursts on every page load (mostly 304s) and would otherwise bury the routes
+ * and server functions that actually matter. Mirrors the native classifier used
+ * for the `[asset]` badge so the two agree on what counts as an asset.
+ */
+const ASSET_EXTENSIONS = new Set([
+  "css",
+  "svg",
+  "png",
+  "ico",
+  "jpg",
+  "jpeg",
+  "webp",
+  "avif",
+  "woff",
+  "woff2",
+  "ttf",
+  "map",
+  "json",
+  "wasm",
+]);
+
+/** True when a request URL points at a static asset rather than a route. */
+export function isAssetUrl(url: string): boolean {
+  const pathname = url.split("?")[0];
+  if (!pathname) return false;
+  const dot = pathname.lastIndexOf(".");
+  if (dot === -1) return false;
+  return ASSET_EXTENSIONS.has(pathname.slice(dot + 1));
+}
 
 /** Maximum accepted body size for the SPA route reporting endpoint. */
 const MAX_ROUTE_BODY_BYTES = 64 * 1024;
@@ -407,6 +453,7 @@ export function attachRouteEndpoint(server: any, onRoute: (data: RoutePayload) =
 
 export function requestLogger(config?: RequestLoggerConfig): Plugin {
   const excludeModules = config?.excludeModules ?? true;
+  const excludeAssets = config?.excludeAssets ?? true;
   const groupRepeats = config?.groupRepeats ?? true;
   const repeatWindowMs = config?.repeatWindowMs ?? 1000;
   const detectGraphReevaluation = config?.detectGraphReevaluation ?? true;
@@ -514,6 +561,12 @@ export function requestLogger(config?: RequestLoggerConfig): Plugin {
       server.middlewares.use((req, res, next) => {
         const url = req.originalUrl || "";
         const method = req.method || "GET";
+
+        // Static assets are pure terminal noise: Vite re-requests dozens of
+        // images/fonts/stylesheets on every page load, nearly all 304s. Drop
+        // them before capture and latency tracking so the log stays about
+        // routes, APIs and server functions. Opt out with `excludeAssets: false`.
+        if (excludeAssets && isAssetUrl(url)) return next();
 
         // Single native crossing: classifies the URL for the graph detector and
         // evaluates the exclusion config registered above.
@@ -710,9 +763,55 @@ export function browserLoggerScriptSrc(base: string): string {
   return `${normalized}@id/__x00__virtual:browser-logger`;
 }
 
+/**
+ * Framework-agnostic SPA navigation reporter. Appended to the injected browser
+ * virtual module, so it works with React Router (and any other client router)
+ * without the app importing a router-specific helper. TanStack apps set
+ * `__HYPERLOG_ROUTER_SUBSCRIBED__` from their own client reporter, which makes
+ * this a no-op there and avoids duplicate route lines.
+ */
+const SPA_ROUTE_SCRIPT = `
+if (typeof window !== 'undefined' && import.meta.hot && !window.__HYPERLOG_SPA_ROUTE_PATCHED__) {
+  window.__HYPERLOG_SPA_ROUTE_PATCHED__ = true;
+  let lastReported = location.pathname + location.search;
+  const sendSpaRoute = (path) => {
+    try {
+      import.meta.hot.send('vite-plugin-hyperlog:spa-route', {
+        routeId: 'client',
+        path,
+        params: null,
+        durationMs: null,
+        isPreload: false,
+      });
+    } catch (e) {}
+  };
+  const report = () => {
+    if (window.__HYPERLOG_ROUTER_SUBSCRIBED__) return;
+    const path = location.pathname + location.search;
+    if (path === lastReported) return;
+    lastReported = path;
+    sendSpaRoute(path);
+  };
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  history.pushState = function (...args) {
+    const result = originalPushState.apply(this, args);
+    report();
+    return result;
+  };
+  history.replaceState = function (...args) {
+    const result = originalReplaceState.apply(this, args);
+    report();
+    return result;
+  };
+  window.addEventListener('popstate', report);
+}
+`;
+
 export function browserLogger(config?: BrowserLoggerConfig): Plugin {
   const virtualModuleId = "virtual:browser-logger";
   const resolvedVirtualModuleId = "\0" + virtualModuleId;
+  const spaRoutes = config?.spaRoutes !== false;
 
   // Defaults to "/" so the tag is still correct if configResolved has not run yet.
   let base = "/";
@@ -739,7 +838,8 @@ export function browserLogger(config?: BrowserLoggerConfig): Plugin {
       if (id === resolvedVirtualModuleId || id.endsWith(virtualModuleId)) {
         const baseScript = getBrowserLoggerScript();
         const uiScript = config?.serverFunctionUi !== false ? getServerFunctionOverlayScript() : "";
-        return baseScript + "\n" + uiScript;
+        const routeScript = spaRoutes ? SPA_ROUTE_SCRIPT : "";
+        return baseScript + "\n" + uiScript + "\n" + routeScript;
       }
     },
 
@@ -864,6 +964,10 @@ export function browserLogger(config?: BrowserLoggerConfig): Plugin {
       };
 
       server.ws.on("vite-plugin-hyperlog:browser-log", handleBrowserLog);
+
+      if (spaRoutes) {
+        server.ws.on("vite-plugin-hyperlog:spa-route", routeEventSinkHandler(sink));
+      }
 
       attachRouteEndpoint(server, routeEventSinkHandler(sink));
     },

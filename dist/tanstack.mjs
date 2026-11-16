@@ -1,4 +1,4 @@
-import { C as formatSummaryLine, D as require_vite_plugin_logger, S as createSummaryTracker, _ as logServerFnCall, b as buildRequestEvent, d as routeEventSinkHandler, h as detectServerFunction, i as browserLogger, m as captureServerFnBodies, n as allocateExclusionConfigId, r as attachRouteEndpoint, t as DEFAULT_EXCLUDE_URLS, v as parseServerFnArgs, x as createLogSink, y as parseServerFnResult } from "./plugin-shared.mjs";
+import { C as createSummaryTracker, O as require_vite_plugin_logger, S as createLogSink, b as parseServerFnResult, c as isAssetUrl, f as routeEventSinkHandler, g as detectServerFunction, h as captureServerFnBodies, i as browserLogger$1, n as allocateExclusionConfigId, r as attachRouteEndpoint, t as DEFAULT_EXCLUDE_URLS, v as logServerFnCall, w as formatSummaryLine, x as buildRequestEvent, y as parseServerFnArgs } from "./plugin-shared.mjs";
 import fs from "node:fs";
 import path from "node:path";
 //#region src/tanstack.ts
@@ -59,6 +59,7 @@ const TANSTACK_EXCLUDE_PATTERNS = [
 ];
 function requestLogger(config) {
 	const excludeModules = config?.excludeModules ?? true;
+	const excludeAssets = config?.excludeAssets ?? true;
 	const matchRouteTree = config?.matchRouteTree ?? true;
 	const groupServerFn = config?.groupServerFn ?? true;
 	const groupWindowMs = config?.groupServerFnWindowMs ?? 80;
@@ -150,6 +151,7 @@ function requestLogger(config) {
 			server.middlewares.use((req, res, next) => {
 				const url = req.originalUrl || "";
 				const method = req.method || "GET";
+				if (excludeAssets && isAssetUrl(url)) return next();
 				const observation = (0, import_vite_plugin_logger.observeRequest)(exclusionConfigId, url);
 				if (excludedMethods && excludedMethods.has(method.toUpperCase())) return next();
 				if (observation.excluded) return next();
@@ -258,6 +260,14 @@ function requestLogger(config) {
 		}
 	};
 }
+/**
+* TanStack apps report navigations from `registerTanStackRouterLogger`, so the
+* generic History API reporter is disabled here to avoid duplicate route lines.
+*/
+const browserLogger = (config) => browserLogger$1({
+	spaRoutes: false,
+	...config
+});
 /**
 * Convenient unified TanStack logger plugin that registers both requestLogger and browserLogger.
 */

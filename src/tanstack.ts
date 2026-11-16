@@ -20,9 +20,11 @@ import {
 import {
   allocateExclusionConfigId,
   attachRouteEndpoint,
-  browserLogger,
+  browserLogger as baseBrowserLogger,
   DEFAULT_EXCLUDE_URLS,
+  isAssetUrl,
   routeEventSinkHandler,
+  type BrowserLoggerConfig,
   type RequestLoggerConfig,
   type ServerFunctionConfig,
 } from "./plugin";
@@ -46,6 +48,12 @@ export interface TanStackLoggerConfig extends RequestLoggerConfig {
    * @default false
    */
   excludeApis?: boolean;
+
+  /**
+   * Filter out static asset requests (images, fonts, stylesheets, etc.) from terminal logs.
+   * @default true
+   */
+  excludeAssets?: boolean;
 
   /**
    * Automatically match URLs to route patterns defined in routeTree.gen.ts
@@ -175,6 +183,7 @@ interface PendingServerFn {
 
 export function requestLogger(config?: TanStackLoggerConfig): Plugin {
   const excludeModules = config?.excludeModules ?? true;
+  const excludeAssets = config?.excludeAssets ?? true;
   const matchRouteTree = config?.matchRouteTree ?? true;
   const groupServerFn = config?.groupServerFn ?? true;
   const groupWindowMs = config?.groupServerFnWindowMs ?? 80;
@@ -328,6 +337,9 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
       server.middlewares.use((req, res, next) => {
         const url = req.originalUrl || "";
         const method = req.method || "GET";
+
+        // Static assets are request noise, not routes or server functions.
+        if (excludeAssets && isAssetUrl(url)) return next();
 
         // Single native crossing that evaluates the registered exclusion config.
         const observation = observeRequest(exclusionConfigId, url);
@@ -500,6 +512,13 @@ export function requestLogger(config?: TanStackLoggerConfig): Plugin {
     },
   };
 }
+
+/**
+ * TanStack apps report navigations from `registerTanStackRouterLogger`, so the
+ * generic History API reporter is disabled here to avoid duplicate route lines.
+ */
+const browserLogger: typeof baseBrowserLogger = (config?: BrowserLoggerConfig) =>
+  baseBrowserLogger({ spaRoutes: false, ...config });
 
 /**
  * Convenient unified TanStack logger plugin that registers both requestLogger and browserLogger.

@@ -1155,6 +1155,36 @@ const DEFAULT_EXCLUDE_URLS = [
 	"/.well-known",
 	"/__hyperlog"
 ];
+/**
+* Static asset extensions served by Vite during development. These arrive in
+* bursts on every page load (mostly 304s) and would otherwise bury the routes
+* and server functions that actually matter. Mirrors the native classifier used
+* for the `[asset]` badge so the two agree on what counts as an asset.
+*/
+const ASSET_EXTENSIONS = /* @__PURE__ */ new Set([
+	"css",
+	"svg",
+	"png",
+	"ico",
+	"jpg",
+	"jpeg",
+	"webp",
+	"avif",
+	"woff",
+	"woff2",
+	"ttf",
+	"map",
+	"json",
+	"wasm"
+]);
+/** True when a request URL points at a static asset rather than a route. */
+function isAssetUrl(url) {
+	const pathname = url.split("?")[0];
+	if (!pathname) return false;
+	const dot = pathname.lastIndexOf(".");
+	if (dot === -1) return false;
+	return ASSET_EXTENSIONS.has(pathname.slice(dot + 1));
+}
 /** Maximum accepted body size for the SPA route reporting endpoint. */
 const MAX_ROUTE_BODY_BYTES = 65536;
 let nextExclusionConfigId = 1;
@@ -1285,6 +1315,7 @@ function attachRouteEndpoint(server, onRoute = logRouteEvent) {
 }
 function requestLogger(config) {
 	const excludeModules = config?.excludeModules ?? true;
+	const excludeAssets = config?.excludeAssets ?? true;
 	const groupRepeats = config?.groupRepeats ?? true;
 	const repeatWindowMs = config?.repeatWindowMs ?? 1e3;
 	const detectGraphReevaluation = config?.detectGraphReevaluation ?? true;
@@ -1345,6 +1376,7 @@ function requestLogger(config) {
 			server.middlewares.use((req, res, next) => {
 				const url = req.originalUrl || "";
 				const method = req.method || "GET";
+				if (excludeAssets && isAssetUrl(url)) return next();
 				const observation = (0, import_vite_plugin_logger.observeRequest)(exclusionConfigId, url);
 				if (detectGraphReevaluation) observe(observation.isModule, url);
 				if (excludedMethods && excludedMethods.has(method.toUpperCase())) return next();
@@ -1461,9 +1493,54 @@ function requestLogger(config) {
 function browserLoggerScriptSrc(base) {
 	return `${base.endsWith("/") ? base : `${base}/`}@id/__x00__virtual:browser-logger`;
 }
+/**
+* Framework-agnostic SPA navigation reporter. Appended to the injected browser
+* virtual module, so it works with React Router (and any other client router)
+* without the app importing a router-specific helper. TanStack apps set
+* `__HYPERLOG_ROUTER_SUBSCRIBED__` from their own client reporter, which makes
+* this a no-op there and avoids duplicate route lines.
+*/
+const SPA_ROUTE_SCRIPT = `
+if (typeof window !== 'undefined' && import.meta.hot && !window.__HYPERLOG_SPA_ROUTE_PATCHED__) {
+  window.__HYPERLOG_SPA_ROUTE_PATCHED__ = true;
+  let lastReported = location.pathname + location.search;
+  const sendSpaRoute = (path) => {
+    try {
+      import.meta.hot.send('vite-plugin-hyperlog:spa-route', {
+        routeId: 'client',
+        path,
+        params: null,
+        durationMs: null,
+        isPreload: false,
+      });
+    } catch (e) {}
+  };
+  const report = () => {
+    if (window.__HYPERLOG_ROUTER_SUBSCRIBED__) return;
+    const path = location.pathname + location.search;
+    if (path === lastReported) return;
+    lastReported = path;
+    sendSpaRoute(path);
+  };
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  history.pushState = function (...args) {
+    const result = originalPushState.apply(this, args);
+    report();
+    return result;
+  };
+  history.replaceState = function (...args) {
+    const result = originalReplaceState.apply(this, args);
+    report();
+    return result;
+  };
+  window.addEventListener('popstate', report);
+}
+`;
 function browserLogger(config) {
 	const virtualModuleId = "virtual:browser-logger";
 	const resolvedVirtualModuleId = "\0" + virtualModuleId;
+	const spaRoutes = config?.spaRoutes !== false;
 	let base = "/";
 	return {
 		name: "vite-plugin-browser-logger",
@@ -1479,7 +1556,8 @@ function browserLogger(config) {
 			if (id === resolvedVirtualModuleId || id.endsWith(virtualModuleId)) {
 				const baseScript = (0, import_vite_plugin_logger.getBrowserLoggerScript)();
 				const uiScript = config?.serverFunctionUi !== false ? getServerFunctionOverlayScript() : "";
-				return baseScript + "\n" + uiScript;
+				const routeScript = spaRoutes ? SPA_ROUTE_SCRIPT : "";
+				return baseScript + "\n" + uiScript + "\n" + routeScript;
 			}
 		},
 		transformIndexHtml() {
@@ -1573,6 +1651,7 @@ function browserLogger(config) {
 				pendingBrowserLogs.set(key, entry);
 			};
 			server.ws.on("vite-plugin-hyperlog:browser-log", handleBrowserLog);
+			if (spaRoutes) server.ws.on("vite-plugin-hyperlog:spa-route", routeEventSinkHandler(sink));
 			attachRouteEndpoint(server, routeEventSinkHandler(sink));
 		}
 	};
@@ -1625,4 +1704,4 @@ function createFrameworkLogger(defaultExclude) {
 	};
 }
 //#endregion
-export { formatSummaryLine as C, require_vite_plugin_logger as D, stripAnsi as E, createSummaryTracker as S, readNoColor as T, logServerFnCall as _, browserLoggerScriptSrc as a, buildRequestEvent as b, logRouteEvent as c, routeEventSinkHandler as d, getServerFunctionOverlayScript as f, formatPayload as g, detectServerFunction as h, browserLogger as i, logger as l, captureServerFnBodies as m, allocateExclusionConfigId as n, createFrameworkLogger as o, MAX_CAPTURE_BYTES as p, attachRouteEndpoint as r, import_vite_plugin_logger as s, DEFAULT_EXCLUDE_URLS as t, requestLogger as u, parseServerFnArgs as v, readForceColor as w, createLogSink as x, parseServerFnResult as y };
+export { createSummaryTracker as C, stripAnsi as D, readNoColor as E, require_vite_plugin_logger as O, createLogSink as S, readForceColor as T, formatPayload as _, browserLoggerScriptSrc as a, parseServerFnResult as b, isAssetUrl as c, requestLogger as d, routeEventSinkHandler as f, detectServerFunction as g, captureServerFnBodies as h, browserLogger as i, logRouteEvent as l, MAX_CAPTURE_BYTES as m, allocateExclusionConfigId as n, createFrameworkLogger as o, getServerFunctionOverlayScript as p, attachRouteEndpoint as r, import_vite_plugin_logger as s, DEFAULT_EXCLUDE_URLS as t, logger as u, logServerFnCall as v, formatSummaryLine as w, buildRequestEvent as x, parseServerFnArgs as y };

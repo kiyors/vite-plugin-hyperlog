@@ -20,7 +20,15 @@ import {
   readNoColor,
   stripAnsi,
 } from "../src/log-sink";
-import { browserLoggerScriptSrc, isModuleRequest, matchesExclusion } from "../src/plugin";
+import {
+  browserLogger,
+  browserLoggerScriptSrc,
+  isAssetUrl,
+  isModuleRequest,
+  matchesExclusion,
+  requestLogger,
+  type RequestLoggerConfig,
+} from "../src/plugin";
 import {
   MAX_CAPTURE_BYTES,
   captureServerFnBodies,
@@ -31,7 +39,7 @@ import {
   parseServerFnArgs,
   parseServerFnResult,
 } from "../src/server-fn-utils";
-import { parseRouteTreeContent } from "../src/tanstack";
+import { browserLogger as tanstackBrowserLogger, parseRouteTreeContent } from "../src/tanstack";
 import { registerTanStackRouterLogger } from "../src/tanstack-client";
 
 /** Collects everything a sink writes, for assertions. */
@@ -362,6 +370,9 @@ describe("Client registerTanStackRouterLogger", () => {
     try {
       registerTanStackRouterLogger(fakeRouter);
 
+      // Suppresses the generic History API reporter so routes are not doubled.
+      // SAFETY: The guard flag lives on globalThis without a first-class type.
+      expect((globalThis as any).__HYPERLOG_ROUTER_SUBSCRIBED__).toBe(true);
       expect(subscribers.has("onBeforeNavigate")).toBe(true);
       expect(subscribers.has("onResolved")).toBe(true);
       expect(subscribers.has("onPreloaded")).toBe(true);
@@ -398,6 +409,8 @@ describe("Client registerTanStackRouterLogger", () => {
       globalThis.fetch = originalFetch;
       // SAFETY: Restoring original window after test teardown
       (globalThis as any).window = originalWindow;
+      // SAFETY: The guard flag lives on globalThis without a first-class type.
+      (globalThis as any).__HYPERLOG_ROUTER_SUBSCRIBED__ = undefined;
     }
   });
 });
@@ -511,6 +524,120 @@ describe("isModuleRequest", () => {
 
   it("does not treat an api path that ends in a script extension as a module", () => {
     expect(isModuleRequest("/api/config.js")).toBe(false);
+  });
+});
+
+describe("isAssetUrl", () => {
+  it("detects static assets, with or without a query string", () => {
+    expect(isAssetUrl("/assets/img/hero.webp")).toBe(true);
+    expect(isAssetUrl("/assets/img/hero.webp?v=1")).toBe(true);
+    expect(isAssetUrl("/favicon.ico")).toBe(true);
+    expect(isAssetUrl("/fonts/inter.woff2")).toBe(true);
+    expect(isAssetUrl("/src/index.css")).toBe(true);
+  });
+
+  it("does not classify routes or server functions as assets", () => {
+    expect(isAssetUrl("/")).toBe(false);
+    expect(isAssetUrl("/models")).toBe(false);
+    expect(isAssetUrl("/team-alpha/issues")).toBe(false);
+    expect(isAssetUrl("/api/users")).toBe(false);
+    expect(isAssetUrl("/_serverFn/abc")).toBe(false);
+  });
+});
+
+/** Reads the source served for the browser-logger virtual module. */
+function virtualModuleSource(plugin: ReturnType<typeof browserLogger>): string {
+  // SAFETY: browserLogger always defines `load` as a plain function, not an object hook.
+  const load = plugin.load as (id: string) => string;
+  if (!load) throw new Error("browserLogger has no load hook");
+  return String(load("\0virtual:browser-logger"));
+}
+
+describe("excludeAssets option", () => {
+  interface ProbeRequest {
+    originalUrl: string;
+    method: string;
+    headers: Record<string, string>;
+    on: () => void;
+  }
+
+  interface ProbeResponse {
+    on: (event: string) => void;
+    removeListener: () => void;
+    getHeader: () => undefined;
+    write: () => boolean;
+    end: () => void;
+    statusCode: number;
+    writableEnded: boolean;
+  }
+
+  type ProbeMiddleware = (req: ProbeRequest, res: ProbeResponse, next: () => void) => void;
+
+  /** True when the request logger attached response listeners for an asset URL. */
+  function assetWasLogged(config?: RequestLoggerConfig): boolean {
+    let middleware: ProbeMiddleware | null = null;
+    const server = {
+      middlewares: {
+        use: (handler: ProbeMiddleware) => {
+          // The request logger registers last; the route endpoint registers first.
+          middleware = handler;
+        },
+      },
+      httpServer: { on: () => {} },
+    };
+    // SAFETY: requestLogger only touches `middlewares.use` and `httpServer.on`.
+    requestLogger(config).configureServer(server as any);
+
+    const req: ProbeRequest = {
+      originalUrl: "/assets/img/hero.webp",
+      method: "GET",
+      headers: {},
+      on: () => {},
+    };
+    let listeners = 0;
+    const res: ProbeResponse = {
+      on: (event: string) => {
+        if (event === "finish" || event === "close") listeners += 1;
+      },
+      removeListener: () => {},
+      getHeader: () => undefined,
+      write: () => true,
+      end: () => {},
+      statusCode: 200,
+      writableEnded: false,
+    };
+    // SAFETY: configureServer registered the middleware synchronously above.
+    const handler = middleware as ProbeMiddleware;
+    handler(req, res, () => {});
+    return listeners > 0;
+  }
+
+  it("skips asset requests by default and when explicitly enabled", () => {
+    expect(assetWasLogged()).toBe(false);
+    expect(assetWasLogged({ excludeAssets: true })).toBe(false);
+  });
+
+  it("processes asset requests when disabled", () => {
+    expect(assetWasLogged({ excludeAssets: false })).toBe(true);
+  });
+});
+
+describe("browserLogger SPA route reporter", () => {
+  it("injects the History API navigation reporter by default", () => {
+    const source = virtualModuleSource(browserLogger());
+    expect(source).toContain("vite-plugin-hyperlog:spa-route");
+    expect(source).toContain("__HYPERLOG_ROUTER_SUBSCRIBED__");
+    expect(source).toContain("popstate");
+  });
+
+  it("omits the reporter when spaRoutes is disabled", () => {
+    const source = virtualModuleSource(browserLogger({ spaRoutes: false }));
+    expect(source).not.toContain("vite-plugin-hyperlog:spa-route");
+  });
+
+  it("TanStack adapter disables the generic reporter (its client reports routes)", () => {
+    const source = virtualModuleSource(tanstackBrowserLogger());
+    expect(source).not.toContain("vite-plugin-hyperlog:spa-route");
   });
 });
 

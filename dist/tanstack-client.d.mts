@@ -30,6 +30,7 @@ interface HotClient {
 }
 declare global {
   var __HYPERLOG_HOT__: HotClient | undefined;
+  var __HYPERLOG_ROUTER_SUBSCRIBED__: boolean | undefined;
   var __vite_plugin_react_preamble_installed__: HotClient | undefined;
 }
 /**

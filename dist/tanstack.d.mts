@@ -1,4 +1,4 @@
-import { i as RequestLoggerConfig, l as browserLogger } from "./plugin-shared.mjs";
+import { i as RequestLoggerConfig, l as browserLogger$1 } from "./plugin-shared.mjs";
 import { Plugin } from "vite";
 //#region src/tanstack.d.ts
 export interface TanStackLoggerConfig extends RequestLoggerConfig {
@@ -12,6 +12,11 @@ export interface TanStackLoggerConfig extends RequestLoggerConfig {
    * @default false
    */
   excludeApis?: boolean;
+  /**
+   * Filter out static asset requests (images, fonts, stylesheets, etc.) from terminal logs.
+   * @default true
+   */
+  excludeAssets?: boolean;
   /**
    * Automatically match URLs to route patterns defined in routeTree.gen.ts
    * @default true
@@ -39,6 +44,11 @@ export interface RouteMatcher {
 }
 export declare function parseRouteTreeContent(content: string): RouteMatcher[];
 export declare function requestLogger(config?: TanStackLoggerConfig): Plugin;
+/**
+ * TanStack apps report navigations from `registerTanStackRouterLogger`, so the
+ * generic History API reporter is disabled here to avoid duplicate route lines.
+ */
+declare const browserLogger: typeof browserLogger$1;
 /**
  * Convenient unified TanStack logger plugin that registers both requestLogger and browserLogger.
  */

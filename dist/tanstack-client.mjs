@@ -71,6 +71,7 @@ function extractRouteId(match, fallback, pathname) {
 function registerTanStackRouterLogger(router) {
 	if (!import.meta.env?.DEV) return;
 	if (!("window" in globalThis) || !router || !("subscribe" in router)) return;
+	globalThis.__HYPERLOG_ROUTER_SUBSCRIBED__ = true;
 	let navStartTime = 0;
 	try {
 		router.subscribe("onBeforeNavigate", () => {

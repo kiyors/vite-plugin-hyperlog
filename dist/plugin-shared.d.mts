@@ -313,6 +313,13 @@ interface ServerFunctionConfig {
 }
 interface BrowserLoggerConfig {
   /**
+   * Report client-side SPA navigations to the terminal by observing History API
+   * changes (pushState / replaceState / popstate). Frameworks with their own
+   * router reporter (TanStack Start) disable this to avoid duplicate lines.
+   * @default true
+   */
+  spaRoutes?: boolean;
+  /**
    * Enable the in-browser floating DevTools overlay and drawer for inspecting server functions.
    * @default true
    */
@@ -345,6 +352,13 @@ interface RequestLoggerConfig {
    * @default false
    */
   excludeApis?: boolean;
+  /**
+   * Filter out static asset requests (images, fonts, stylesheets, etc.) from
+   * terminal logs. Vite re-requests dozens on every page load, almost all
+   * `304`s, which buries routes and server functions. Set to `false` to see
+   * them again. Default: true.
+   */
+  excludeAssets?: boolean;
   /**
    * Collapse repeated requests to the same URL within `repeatWindowMs` into a
    * single trailing `(xN)` line instead of printing one line each.
@@ -398,6 +412,8 @@ interface RequestLoggerConfig {
  * extra patterns on top via `TANSTACK_EXCLUDE_PATTERNS`.
  */
 declare const DEFAULT_EXCLUDE_URLS: string[];
+/** True when a request URL points at a static asset rather than a route. */
+declare function isAssetUrl(url: string): boolean;
 /**
  * Allocates a unique plugin-instance id for the native exclusion cache.
  *
@@ -451,4 +467,4 @@ declare function createFrameworkLogger(defaultExclude: string): {
   logger: (config?: RequestLoggerConfig) => Plugin[];
 };
 //#endregion
-export { parseServerFnResult as A, readForceColor as B, MAX_CAPTURE_BYTES as C, formatPayload as D, detectServerFunction as E, SummarySample as F, stripAnsi as H, SummaryTracker as I, createLogSink as L, LogSink as M, LogSinkOptions as N, logServerFnCall as O, SummaryOptions as P, createSummaryTracker as R, shouldExcludeRequest as S, captureServerFnBodies as T, readNoColor as V, RemappedPosition as _, RoutePayload as a, remapSourcePosition as b, attachRouteEndpoint as c, createFrameworkLogger as d, logRouteEvent as f, getServerFunctionOverlayScript as g, routeEventSinkHandler as h, RequestLoggerConfig as i, JsonEvent as j, parseServerFnArgs as k, browserLogger as l, requestLogger as m, DEFAULT_EXCLUDE_URLS as n, ServerFunctionConfig as o, logger as p, ReqType as r, allocateExclusionConfigId as s, BrowserLoggerConfig as t, browserLoggerScriptSrc as u, isModuleRequest as v, ServerFnDetails as w, remapStackTrace as x, matchesExclusion as y, formatSummaryLine as z };
+export { parseServerFnArgs as A, formatSummaryLine as B, shouldExcludeRequest as C, detectServerFunction as D, captureServerFnBodies as E, SummaryOptions as F, readNoColor as H, SummarySample as I, SummaryTracker as L, JsonEvent as M, LogSink as N, formatPayload as O, LogSinkOptions as P, createLogSink as R, remapStackTrace as S, ServerFnDetails as T, stripAnsi as U, readForceColor as V, getServerFunctionOverlayScript as _, RoutePayload as a, matchesExclusion as b, attachRouteEndpoint as c, createFrameworkLogger as d, isAssetUrl as f, routeEventSinkHandler as g, requestLogger as h, RequestLoggerConfig as i, parseServerFnResult as j, logServerFnCall as k, browserLogger as l, logger as m, DEFAULT_EXCLUDE_URLS as n, ServerFunctionConfig as o, logRouteEvent as p, ReqType as r, allocateExclusionConfigId as s, BrowserLoggerConfig as t, browserLoggerScriptSrc as u, RemappedPosition as v, MAX_CAPTURE_BYTES as w, remapSourcePosition as x, isModuleRequest as y, createSummaryTracker as z };

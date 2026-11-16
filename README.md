@@ -8,6 +8,11 @@ A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
 > for the migration notes — in short, set `excludeModules: false` if you relied on
 > seeing your own `/src/**` modules logged.
 
+## New in 0.4.1
+
+- **No more asset spam** — images, fonts, stylesheets and other static assets are filtered out of the terminal by default in every adapter. Re-enable them with `requestLogger({ excludeAssets: false })`.
+- **SPA routes in React** — client-side navigations are logged as `[route] ➜ /path [client]` automatically, with no router-specific setup. TanStack keeps its richer pattern-and-params route events without duplication.
+
 ## New in 0.4.0
 
 - **NDJSON output mode** — set `json: true` and every adapter (requests, server functions, routes, browser logs, graph warnings) emits one compact structured JSON row per event, ready for `jq`, a file, or a log collector.
@@ -22,7 +27,8 @@ A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
 ## Features
 
 - **`requestLogger`**: High-performance HTTP request logging. Replaces Vite's default logger with a highly optimized Rust-powered logger. Tracks duration times, reports aborted requests as `499`, collapses repeated requests with a repeat counter, and formats output with ANSI colors instantly. Ships pretty, NDJSON (`json`), and summary (`summaryStats`) output modes.
-- **`browserLogger`**: Client-side console logging in your terminal. Automatically intercepts `console.log`, `console.error`, and uncaught exceptions from your browser, securely routes them to the Vite dev server via WebSockets, and prints them to your backend terminal. Framework-agnostic, rate-budgeted, and dev-server only, so nothing is injected into production builds.
+- **`browserLogger`**: Client-side console logging in your terminal. Automatically intercepts `console.log`, `console.error`, and uncaught exceptions from your browser, securely routes them to the Vite dev server via WebSockets, and prints them to your backend terminal. It also reports SPA navigations out of the box by observing History API changes (`pushState` / `replaceState` / `popstate`), so React Router and other client routers show route lines without extra setup. Framework-agnostic, rate-budgeted, and dev-server only, so nothing is injected into production builds.
+- **Quiet asset logs**: Static assets (`.png`, `.webp`, `.jpg`, `.woff2`, `.css`, `.svg`, `.json`, …) are filtered out by default in every adapter; set `excludeAssets: false` to bring them back. Vite re-requests dozens of them on each page load — almost always `304`s — which buried the routes and server functions worth looking at.
 
 ## Installation
 
@@ -78,6 +84,11 @@ requestLogger({
   // "/dashboard/apiSettings". Anything else is a plain substring match, which is
   // what query patterns like "?import" need.
   excludeUrls: ["/my-custom-endpoint"],
+
+  // Static assets (images, fonts, .css, .json, …) are filtered out by default —
+  // Vite re-requests dozens per page load, nearly all 304s. Set to false to see
+  // them again. Default: true
+  excludeAssets: true,
 
   // Filter Vite module noise: both dependency modules ("/node_modules/",
   // "/@vite", "/@id/") and your own source modules ("/src/**", *.ts|tsx|js|css).
@@ -232,7 +243,7 @@ export default defineConfig({
 
 #### Client-Side SPA Route Logger
 
-Because client-side SPA navigations occur inside the browser without triggering full-page HTTP requests, you can register the client-side route subscriber to stream route transitions and preloads straight to your dev terminal:
+Client-side SPA navigations never trigger a full-page HTTP request, so the injected `browserLogger` reports `pushState` / `replaceState` / `popstate` changes to the terminal automatically — React Router and other client routers need no extra setup. TanStack apps can register the client-side route subscriber below to stream transitions and preloads with the matched route pattern and params instead:
 
 > **Important**: Always import `registerTanStackRouterLogger` from `"vite-plugin-hyperlog/tanstack/client"` (not `"vite-plugin-hyperlog/tanstack"`). The `tanstack` entry point is the Vite server plugin which runs in Node.js, while `tanstack/client` is the zero-dependency browser client bundle.
 
@@ -277,6 +288,18 @@ not only on `createBrowserRouter`.
 - **Timer Support**: Supports `console.time('label')` and `console.timeEnd('label')` to track client-side performance.
 - **Intelligent Stack Trace Cleaning & Sourcemap Remapping**: Powered by a custom zero-dependency VLQ sourcemap decoder to parse browser error frames, highlight user application frames (`➜ src/lib/api.ts:25:11 in fetchUser`), dim dependency noise, and remap positions to original TypeScript source files.
 - **Flood Protection**: Rapid repetitive logs (e.g. from render loops or scroll listeners) are debounced and collapsed with a repeat counter (`(x5)`), and a rolling rate budget caps terminal prints so whole-log floods degrade to a single notice instead of pinning the dev server.
+- **SPA Route Reporting**: Client-side navigations are printed as `[route] ➜ /models [client]` with no app changes. The TanStack adapter opts out because `registerTanStackRouterLogger` already sends richer events with the matched route pattern and params.
+
+```typescript
+browserLogger({
+  // Report SPA navigations by observing History API changes. Default: true.
+  // TanStack's browserLogger defaults this to false to avoid duplicate lines.
+  spaRoutes: true,
+  serverFunctionUi: true,
+  json: false,
+  stripColors: true,
+});
+```
 
 ```bash
 22:56:51 [browser]       User signed in  (src/components/Login.tsx:42)

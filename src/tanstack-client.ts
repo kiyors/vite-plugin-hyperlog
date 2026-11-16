@@ -70,6 +70,9 @@ function reportSwallowed(where: string, detail: string): void {
 
 declare global {
   var __HYPERLOG_HOT__: HotClient | undefined;
+  // Tells the browser logger's generic History API reporter to stand down: this
+  // module provides richer route events (route id + params) for TanStack apps.
+  var __HYPERLOG_ROUTER_SUBSCRIBED__: boolean | undefined;
   // Set by @vitejs/plugin-react's preamble. TanStack apps commonly use the React
   // plugin, so this stays as a fallback for when this module is evaluated before
   // `import.meta.hot` is populated. It is read defensively and never assumed.
@@ -147,6 +150,8 @@ export function registerTanStackRouterLogger(router: TanStackRouterLike): void {
   if (!("window" in globalThis) || !router || !("subscribe" in router)) {
     return;
   }
+
+  globalThis.__HYPERLOG_ROUTER_SUBSCRIBED__ = true;
 
   let navStartTime = 0;
 

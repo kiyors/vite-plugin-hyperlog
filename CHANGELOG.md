@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1]
+
+### Added
+
+- **SPA navigation logging for every adapter**: `browserLogger` now observes History API changes (`pushState`, `replaceState`, `popstate`) and prints client-side route transitions as `[route] ➜ /path [client]`, so React Router and other client routers report navigations without app-side setup. Disable with `browserLogger({ spaRoutes: false })`.
+- **`excludeAssets` option**: static asset requests can be re-enabled with `requestLogger({ excludeAssets: false })` (default `true`), in both the base/framework adapters and TanStack.
+
+### Changed
+
+- **Static assets are quiet by default**: image, font, stylesheet, and other asset requests are filtered out in every adapter (base/React/Vue/Svelte/Solid and TanStack). Vite re-requests dozens on each page load, almost always `304`s, which buried route, API, and server-function activity. This replaces the previous flood of `[asset] 304 GET …` lines; pass `excludeAssets: false` to restore them.
+
+### Fixed
+
+- **TanStack route duplication**: the TanStack adapter's `browserLogger` disables the generic History API reporter, and `registerTanStackRouterLogger` sets a guard flag, so navigations are reported once with the matched route pattern and params instead of twice.
+
 ## [0.4.0]
 
 ### Added
