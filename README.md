@@ -1,41 +1,59 @@
 # vite-plugin-hyperlog
 
-A blazing fast Vite logger plugin powered by Rust (NAPI-RS) and TypeScript.
+[![npm version](https://img.shields.io/npm/v/vite-plugin-hyperlog)](https://www.npmjs.com/package/vite-plugin-hyperlog)
+[![license](https://img.shields.io/npm/l/vite-plugin-hyperlog)](LICENSE)
 
-> **Note**: This plugin supports multiple frameworks via tailored entry points (React, Vue, Svelte, Solid, and TanStack).
+A fast, dev-only Vite logger powered by a small Rust (NAPI-RS) addon. It shows the requests that matter — routes, APIs, server functions, and browser output — while keeping Vite's module and asset noise out of your terminal.
 
-> **Upgrading to 0.2.1?** Two defaults changed. See [CHANGELOG.md](CHANGELOG.md)
-> for the migration notes — in short, set `excludeModules: false` if you relied on
-> seeing your own `/src/**` modules logged.
+> **Requirements**: Node.js `>=22.14` and Vite `>=5`. Dev-server only (`apply: "serve"`) — nothing ships to production. Migration notes for older defaults live in [CHANGELOG.md](CHANGELOG.md).
 
-## New in 0.4.1
+## Contents
 
-- **No more asset spam** — images, fonts, stylesheets and other static assets are filtered out of the terminal by default in every adapter. Re-enable them with `requestLogger({ excludeAssets: false })`.
-- **SPA routes in React** — client-side navigations are logged as `[route] ➜ /path [client]` automatically, with no router-specific setup. TanStack keeps its richer pattern-and-params route events without duplication.
+- [Highlights](#highlights)
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Reading the output](#reading-the-output)
+- [Configuration](#configuration)
+- [How it works](#how-it-works)
+- [Repeated Requests & Duplicate Graph Loads](#repeated-requests--duplicate-graph-loads)
+- [Rolling Latency Summary](#rolling-latency-summary)
+- [Hardened Dev Server](#hardened-dev-server)
+- [SPA Route Logging](#spa-route-logging)
+- [TanStack Start & TanStack Router](#tanstack-start--tanstack-router)
+- [React Router v7 Future Flags](#react-router-v7-future-flags)
+- [Enhanced Browser Logging](#enhanced-browser-logging)
+- [Performance & Benchmarks](#performance--benchmarks)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [License](#license)
 
-## New in 0.4.0
+## Highlights
 
-- **NDJSON output mode** — set `json: true` and every adapter (requests, server functions, routes, browser logs, graph warnings) emits one compact structured JSON row per event, ready for `jq`, a file, or a log collector.
-- **Rolling latency footer** — `summaryStats` (default on) prints `└─ 10s p50 1.2ms · p95 9.4ms · p99 31ms · 87 reqs` once per configurable window while traffic flows, silent while the dev server idles.
-- **Smart terminal color handling** — colors are stripped automatically for pipes/CI/`NO_COLOR`, forced on with `FORCE_COLOR`, and can be forced off entirely with `stripColors: false`.
-- **Batched terminal writes** — consecutive log lines within one tick are coalesced into a single `process.stdout.write`, cutting syscalls sharply on busy pages while preserving ordering.
-- **Browser-log rate budget** — a flooded page can no longer pin the dev-server CPU or spam the terminal: prints are capped at 400 rows/second with a single suppression notice.
-- **Hardened SPA route endpoint** — `POST /__hyperlog/route` rejects cross-origin forgeries with `403` before reading any body.
-- **One shared pipeline for all adapters** — body capture, server-function rendering, route reporting, and output formatting are now a single implementation (no more adapter drift; TanStack gained 499-abort parity).
-- **~22–118% faster native layer vs 0.3.0** (see the improvement table below).
+- **Curated output** — Vite module requests and static assets are filtered by default; tune with `excludeModules` / `excludeAssets`.
+- **SPA routes everywhere** — client navigations appear as `[route] ➜ /path [client]` with no app changes; TanStack additionally reports matched route patterns and params.
+- **Three output modes** — pretty ANSI lines, NDJSON (`json: true`) for `jq`, and a rolling `p50/p95/p99` footer (`summaryStats`).
+- **Browser console in your terminal** — logs, errors, timers, and sourcemapped stack traces forwarded over HMR, rate-budgeted.
+- **Native speed, tiny footprint** — one native crossing per request and a ~460 KB darwin-arm64 addon; see [Performance & Benchmarks](#performance--benchmarks).
+
+For the full version history, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Features
 
-- **`requestLogger`**: High-performance HTTP request logging. Replaces Vite's default logger with a highly optimized Rust-powered logger. Tracks duration times, reports aborted requests as `499`, collapses repeated requests with a repeat counter, and formats output with ANSI colors instantly. Ships pretty, NDJSON (`json`), and summary (`summaryStats`) output modes.
+- **`requestLogger`**: High-performance HTTP request logging through Vite's dev-server middleware. It sits alongside Vite's own logger (it does not replace it) and prints routes, APIs, server functions, and client-reported navigations with durations, `499` for aborted requests, and `(xN)` repeat collapsing. Output is formatted natively in Rust and available as pretty lines, NDJSON (`json`), or with a rolling latency footer (`summaryStats`).
 - **`browserLogger`**: Client-side console logging in your terminal. Automatically intercepts `console.log`, `console.error`, and uncaught exceptions from your browser, securely routes them to the Vite dev server via WebSockets, and prints them to your backend terminal. It also reports SPA navigations out of the box by observing History API changes (`pushState` / `replaceState` / `popstate`), so React Router and other client routers show route lines without extra setup. Framework-agnostic, rate-budgeted, and dev-server only, so nothing is injected into production builds.
 - **Quiet asset logs**: Static assets (`.png`, `.webp`, `.jpg`, `.woff2`, `.css`, `.svg`, `.json`, …) are filtered out by default in every adapter; set `excludeAssets: false` to bring them back. Vite re-requests dozens of them on each page load — almost always `304`s — which buried the routes and server functions worth looking at.
 
 ## Installation
 
-Install using your preferred package manager (PNPM is recommended):
+Install using your preferred package manager:
 
 ```bash
 pnpm add -D vite-plugin-hyperlog
+# or
+npm install -D vite-plugin-hyperlog
+# or
+yarn add -D vite-plugin-hyperlog
 ```
 
 ## Usage
@@ -52,21 +70,68 @@ export default defineConfig({
 });
 ```
 
-Prefer per-plugin control or framework-tuned exclusions? Import `requestLogger` and `browserLogger` from your specific framework's entry point — the framework-specific import automatically sets up optimized exclusions.
+Prefer per-plugin control or framework-tuned exclusions? Import from a framework entry point — each adds its own optimized defaults on top of the shared implementation:
+
+| Entry point                            | Use for                                                                  |
+| :------------------------------------- | :----------------------------------------------------------------------- |
+| `vite-plugin-hyperlog`                 | Unified `logger()` (request + browser) with generic defaults             |
+| `vite-plugin-hyperlog/react`           | React / React Router; filters `/@react-refresh`                          |
+| `vite-plugin-hyperlog/vue`             | Vue; filters Vue HMR client requests                                     |
+| `vite-plugin-hyperlog/svelte`          | Svelte / SvelteKit                                                       |
+| `vite-plugin-hyperlog/solid`           | Solid / SolidStart                                                       |
+| `vite-plugin-hyperlog/tanstack`        | TanStack Start / Router; route-tree matching, server-function formatting |
+| `vite-plugin-hyperlog/tanstack/client` | Browser-side `registerTanStackRouterLogger` for SPA routes and preloads  |
 
 ```typescript
 // vite.config.ts
 import { defineConfig } from "vite";
 import { requestLogger, browserLogger } from "vite-plugin-hyperlog/react";
-// OR from "vite-plugin-hyperlog/tanstack";
-// OR from "vite-plugin-hyperlog/vue";
-
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react(), requestLogger(), browserLogger()],
 });
 ```
+
+A typical dev session then looks like this — assets stay out of the way, routes and browser activity stand out:
+
+```bash
+16:22:48 [route]          200 GET    / 21.29ms
+16:22:49 [route]          ➜ /models  [client]
+16:22:49 [browser]        User signed in  (src/components/Login.tsx:42)
+16:22:50 └─ 10s p50 0.29ms · p95 21.3ms · p99 21.3ms · 17 reqs
+```
+
+### Reading the output
+
+Each line starts with a badge that tells you where it came from:
+
+| Badge                                               | Meaning                                     | Typical source                                  |
+| :-------------------------------------------------- | :------------------------------------------ | :---------------------------------------------- |
+| `[route]`                                           | Document request or client navigation       | `GET /`, `pushState("/models")`                 |
+| `[server-fn]`                                       | Server function / action invocation         | `/_serverFn/…`, React Server Action headers     |
+| `[api]`                                             | REST / JSON endpoint                        | `GET /api/users`                                |
+| `[asset]`                                           | Static file (hidden by default)             | `.webp`, `.woff2`, `.svg`                       |
+| `[module]`                                          | Vite-transformed source (hidden by default) | `/src/**`, `/@vite/client`                      |
+| `[preload]`                                         | TanStack route preload                      | `onPreloaded` event                             |
+| `[browser]`, `[browser warn]`, `[browser error]`, … | Console output forwarded from the page      | `console.log`, `console.error`, uncaught errors |
+| `[hyperlog]`                                        | Plugin notice (e.g. rate limiting)          | dev server                                      |
+
+What gets logged by default:
+
+| Traffic                                                | Default | Change with                                 |
+| :----------------------------------------------------- | :------ | :------------------------------------------ |
+| Routes / document requests                             | shown   | —                                           |
+| Server functions & actions (basic decoded line)        | shown   | `serverFunctions: false` to hide            |
+| Server function args / results / HUD                   | off     | `serverFunctions: { … }` to enable and tune |
+| `/api` endpoints                                       | shown   | `excludeApis: true`                         |
+| Browser console output and errors                      | shown   | `browserLogger` options                     |
+| SPA navigations                                        | shown   | `browserLogger({ spaRoutes: false })`       |
+| Vite modules (`/src/**`, `/node_modules/**`, `/@vite`) | hidden  | `excludeModules: false`                     |
+| Static assets (images, fonts, CSS, JSON)               | hidden  | `excludeAssets: false`                      |
+| Specific methods or URLs                               | —       | `excludeReqType`, `excludeUrls`             |
+
+> `.css` is classified as both a Vite module and an asset, so showing it requires `excludeAssets: false` **and** `excludeModules: false`.
 
 ### Configuration
 
@@ -135,12 +200,66 @@ requestLogger({
 });
 ```
 
+#### Options reference
+
+`requestLogger` options (shared by every adapter, plus the adapter-specific ones below):
+
+| Option                    | Default   | Purpose                                                                        |
+| :------------------------ | :-------- | :----------------------------------------------------------------------------- |
+| `excludeReqType`          | `[]`      | HTTP methods to skip (`"GET"`, `"POST"`, …; any casing)                        |
+| `excludeUrls`             | `[]`      | Path-segment or substring patterns to skip                                     |
+| `excludeAssets`           | `true`    | Hide images, fonts, stylesheets, JSON, wasm                                    |
+| `excludeModules`          | `true`    | Hide Vite module requests (`/src/**`, `/node_modules/**`, `/@vite`)            |
+| `excludeApis`             | `false`   | Hide `/api` endpoints                                                          |
+| `groupRepeats`            | `true`    | Collapse identical URLs into one `(xN)` line                                   |
+| `repeatWindowMs`          | `1000`    | Grouping window in milliseconds                                                |
+| `detectGraphReevaluation` | `true`    | Warn when the module graph is walked twice in one page load                    |
+| `resolveRoute`            | —         | Custom `url → route pattern` mapper for display                                |
+| `serverFunctions`         | see below | Detailed server-function capture and HUD settings                              |
+| `stripColors`             | `true`    | `true` = auto (TTY / `NO_COLOR` / `FORCE_COLOR`), `false` = force plain text   |
+| `json`                    | `false`   | Emit NDJSON rows instead of formatted lines                                    |
+| `summaryStats`            | `true`    | Rolling latency footer; `{ windowMs, minSamples }` to tune, `false` to disable |
+
+TanStack's `requestLogger` additionally accepts `matchRouteTree` (default `true`), `groupServerFn` (default `true`), `groupServerFnWindowMs` (default `80`), and `routeTreePath` (default `src/routeTree.gen.ts`).
+
+`browserLogger` options:
+
+| Option             | Default | Purpose                                                                        |
+| :----------------- | :------ | :----------------------------------------------------------------------------- |
+| `spaRoutes`        | `true`  | Report History API navigations (the TanStack adapter defaults this to `false`) |
+| `serverFunctionUi` | `true`  | Inject the server-function HUD overlay                                         |
+| `json`             | `false` | Emit NDJSON rows                                                               |
+| `stripColors`      | `true`  | Same colour policy as `requestLogger`                                          |
+
+`serverFunctions` — pass an object (for example `serverFunctions: {}`) to enable detailed capture; pass `false` to disable it entirely. The basic decoded `[server-fn]` line is produced from the URL even when detailed capture is off.
+
+| Option            | Default  | Purpose                                                 |
+| :---------------- | :------- | :------------------------------------------------------ |
+| `enabled`         | `true`   | Enable detailed logging (when the object is supplied)   |
+| `format`          | `"tree"` | `"tree"` (nested under the request) or `"inline"` badge |
+| `logArgs`         | `true`   | Log parsed arguments                                    |
+| `logReturns`      | `true`   | Log the returned value or error                         |
+| `maxDepth`        | `2`      | Maximum object nesting depth                            |
+| `maxBreadth`      | `3`      | Maximum array elements / object keys                    |
+| `maxStringLength` | `40`     | Truncate long strings                                   |
+| `ui`              | `true`   | Show the in-browser HUD                                 |
+| `browserConsole`  | `false`  | Mirror server-function logs to the browser console      |
+| `resolveServerFn` | —        | Custom `request → { functionName, filePath }` resolver  |
+
 With `json: true` the same events look like this:
 
 ```bash
 {"kind":"request","ts":1714300000000,"url":"/dashboard","method":"GET","status":200,"durationMs":12.4}
 {"kind":"server-fn","ts":1714300000100,"name":"getAuthSession","file":"routes/__root.tsx","status":200,"durationMs":3.1,"args":{},"result":{"user":"Gaurav"}}
 ```
+
+### How it works
+
+- Both plugins are registered with Vite's `configureServer` and are gated to `apply: "serve"`, so they never touch a production build.
+- `requestLogger` adds one middleware. A single native call per request classifies it (route / API / module / asset / server function) against a config registered once at startup — exclusions are not marshalled across the Node ↔ Rust boundary per request.
+- `browserLogger` injects a virtual module into `index.html` that forwards `console` calls and uncaught errors over Vite's HMR WebSocket, and watches the History API for SPA navigations. A hardened `POST /__hyperlog/route` endpoint is the fallback transport.
+- All output goes through one shared sink: TTY-aware colour handling, microtask-batched writes, optional NDJSON, and the rolling latency summary.
+- The native addon is dependency-minimal Rust (~460 KB on darwin-arm64) and handles formatting, route matching, sourcemap frame decoding, and stack sanitization.
 
 ### Repeated Requests & Duplicate Graph Loads
 
@@ -197,9 +316,21 @@ with `summaryStats: { windowMs: 5000, minSamples: 10 }`, or turn it off with
   ```
 
 - **Terminal-safe plumbing**: output is written through microtask-batched,
-  single-write flushes, striped of ANSI when stdout is not a terminal or
+  single-write flushes, stripped of ANSI when stdout is not a terminal or
   `NO_COLOR` is set, and flushed once more on server close so shutdown lines
   are never lost.
+
+### SPA Route Logging
+
+A client-side navigation never triggers a document request, so `requestLogger` alone only sees the initial page load. The injected browser script covers the rest: it patches `history.pushState`, `history.replaceState`, and `popstate`, then reports each path change to the dev server:
+
+```bash
+22:58:01 [route]     ➜ /models  [client]
+```
+
+This works with React Router, Wouter, or any router built on the History API — no app-side imports needed. Turn it off with `browserLogger({ spaRoutes: false })`.
+
+For richer events — matched route patterns, params, and preloads — TanStack apps can register a router subscriber (below). The TanStack adapter disables the generic reporter automatically so navigations are never logged twice.
 
 ### TanStack Start & TanStack Router
 
@@ -241,9 +372,9 @@ export default defineConfig({
 > logger inherits `json` / `stripColors` from the config you pass to
 > `logger()` / `tanstackLogger()` so the whole stream stays consistent.
 
-#### Client-Side SPA Route Logger
+#### Rich route events with `registerTanStackRouterLogger`
 
-Client-side SPA navigations never trigger a full-page HTTP request, so the injected `browserLogger` reports `pushState` / `replaceState` / `popstate` changes to the terminal automatically — React Router and other client routers need no extra setup. TanStack apps can register the client-side route subscriber below to stream transitions and preloads with the matched route pattern and params instead:
+Register the client-side subscriber to stream transitions and preloads with the matched route pattern and params:
 
 > **Important**: Always import `registerTanStackRouterLogger` from `"vite-plugin-hyperlog/tanstack/client"` (not `"vite-plugin-hyperlog/tanstack"`). The `tanstack` entry point is the Vite server plugin which runs in Node.js, while `tanstack/client` is the zero-dependency browser client bundle.
 
@@ -259,11 +390,11 @@ export const router = createRouter({ routeTree });
 registerTanStackRouterLogger(router);
 ```
 
-##### Terminal Output Example
+#### Example output
 
 ```bash
 22:56:26 [route]     307 GET / ➜ /login?redirect=%2F 120.50ms
-22:56:26 [route]     200 GET /login (route: /login) 45.20ms
+22:56:26 [route]     200 GET /login [/login] 45.20ms
 22:57:03 [server-fn] 200 GET getAuthSession (routes/__root.tsx) 18.82ms (x2)
 22:57:03 [server-fn] 200 GET getWorkspaces (lib/workspace-loader.ts) 14.28ms
 22:58:01 [route]     ➜ /team-alpha/issues  [/$teamId/issues]  (24.5ms)
@@ -288,7 +419,7 @@ not only on `createBrowserRouter`.
 - **Timer Support**: Supports `console.time('label')` and `console.timeEnd('label')` to track client-side performance.
 - **Intelligent Stack Trace Cleaning & Sourcemap Remapping**: Powered by a custom zero-dependency VLQ sourcemap decoder to parse browser error frames, highlight user application frames (`➜ src/lib/api.ts:25:11 in fetchUser`), dim dependency noise, and remap positions to original TypeScript source files.
 - **Flood Protection**: Rapid repetitive logs (e.g. from render loops or scroll listeners) are debounced and collapsed with a repeat counter (`(x5)`), and a rolling rate budget caps terminal prints so whole-log floods degrade to a single notice instead of pinning the dev server.
-- **SPA Route Reporting**: Client-side navigations are printed as `[route] ➜ /models [client]` with no app changes. The TanStack adapter opts out because `registerTanStackRouterLogger` already sends richer events with the matched route pattern and params.
+- **SPA Route Reporting**: client-side navigations are forwarded as `[route]` lines; see [SPA Route Logging](#spa-route-logging) for details and how to disable them.
 
 ```typescript
 browserLogger({
@@ -314,13 +445,7 @@ browserLogger({
 
 ## Performance & Benchmarks
 
-`vite-plugin-hyperlog` is engineered for zero runtime overhead in Vite development servers. The native extension is written in pure, dependency-minimal Rust compiled to bare metal via Node-API.
-
-### 0.3.0 → 0.4.0 Improvement
-
-The 0.4.0 release switched the release profile to `opt-level = 3` and merged the
-per-request exclusion/module classification into one native crossing. Measured
-on an idle Apple M4 (Node 24, darwin-arm64), before → after:
+Dev-only by design (`apply: "serve"`), so there is no production runtime cost. The hot path is a native addon, and per-request exclusion/classification is a single Rust crossing. Measured on an idle Apple M4 (Node 24, darwin-arm64), 0.3.0 → 0.4.0:
 
 | Benchmark                              | 0.3.0     | 0.4.0         | Change      |
 | :------------------------------------- | :-------- | :------------ | :---------- |
@@ -334,155 +459,45 @@ on an idle Apple M4 (Node 24, darwin-arm64), before → after:
 | `formatLogEntry` (6-path mixed)        | 1,226,963 | **1,806,492** | +47.2%      |
 | `matchRoutePath` (dynamic params)      | 1,014,204 | **1,589,916** | +56.8%      |
 
-The compile-time trade-off is ~100 KB of additional binary size (still ~97%
-smaller than the pre-optimization dependency-heavy build).
+The compile-time trade-off was ~100 KB of extra binary size; the shipped darwin-arm64 addon is ~460 KB (~97% smaller than the old dependency-heavy build).
 
-### Binary Footprint
-
-By eliminating heavy transitive dependencies (`serde`, `regex`, `chrono`, `yansi`, `oxc_parser`, `oxc_sourcemap`) and replacing them with hand-optimized pure Rust zero-allocation algorithms, the compiled binary footprint was reduced by **~97%**:
-
-| Architecture                       | Previous Size | Current Size   | Reduction  |
-| :--------------------------------- | :------------ | :------------- | :--------- |
-| **macOS ARM64** (`darwin-arm64`)   | `15.0 MB`     | **`460 KB`**¹  | **-97.0%** |
-| **macOS x64** (`darwin-x64`)       | `15.2 MB`     | **`≈ 480 KB`** | **-96.9%** |
-| **Linux x64** (`linux-x64-gnu`)    | `15.8 MB`     | **`≈ 500 KB`** | **-96.9%** |
-| **Windows x64** (`win32-x64-msvc`) | `14.9 MB`     | **`≈ 455 KB`** | **-97.0%** |
-
-> ¹ Measured with the shipped `opt-level = 3` speed profile on darwin-arm64 (470,896 bytes).
-> The other columns are estimates from the same build profile across platforms; exact sizes are
-> recorded by the release CI when platform artifacts are built. The remaining rows use the same
-> release profile and land within a few percent of the measured macOS ARM64 figure.
-
----
-
-### Microbenchmarks (Throughput & Latency)
-
-> Tested on **Apple M4 (10 vCPUs, 16 GB Unified Memory)** on macOS with Node.js v24.
-> 5 statistical rounds per benchmark, measuring average, p50, and p99 latencies.
-
-| Function / API                 | Workload Description                   | Throughput              | Avg Latency | P99 Latency | CPU per Call |
-| :----------------------------- | :------------------------------------- | :---------------------- | :---------- | :---------- | :----------- |
-| **`shouldExcludeRequest`**     | Vite module & static asset filtering   | **`3,161,111 ops/sec`** | `0.316 µs`  | `0.319 µs`  | `0.32 µs`    |
-| **`getBrowserLoggerScript`**   | Vite client injector script            | **`2,456,569 ops/sec`** | `0.407 µs`  | `0.413 µs`  | `0.41 µs`    |
-| **`formatRouteLog`**           | Navigations & preloads (4-variant)     | **`2,366,792 ops/sec`** | `0.423 µs`  | `0.428 µs`  | `0.42 µs`    |
-| **`decodeServerFn`**           | URL-safe Base64 + stack JSON extractor | **`1,844,242 ops/sec`** | `0.542 µs`  | `0.566 µs`  | `0.54 µs`    |
-| **`formatLogEntry`**           | 6-path mixed HTTP requests             | **`1,806,492 ops/sec`** | `0.554 µs`  | `0.558 µs`  | `0.55 µs`    |
-| **`formatBrowserLog`**         | 6-type mixed browser telemetry         | **`1,733,763 ops/sec`** | `0.577 µs`  | `0.584 µs`  | `0.58 µs`    |
-| **`remapSourcePosition`**      | Zero-copy VLQ sourcemap token lookup   | **`1,313,267 ops/sec`** | `0.762 µs`  | `0.770 µs`  | `0.76 µs`    |
-| **`matchRoutePath`**           | Native dynamic parameter matcher       | **`1,589,916 ops/sec`** | `0.629 µs`  | `0.635 µs`  | `0.63 µs`    |
-| **`formatServerFnLog`**        | Hierarchical tree & standalone logs    | **`1,246,820 ops/sec`** | `0.802 µs`  | `0.810 µs`  | `0.80 µs`    |
-| **`remapStackTrace`**          | 5-frame minified stack remapping       | **`985,248 ops/sec`**   | `1.015 µs`  | `1.031 µs`  | `1.02 µs`    |
-| **`parseRouteTreeAst`**        | TanStack 15-route tree route scanning  | **`403,818 trees/sec`** | `2.476 µs`  | `2.482 µs`  | `2.48 µs`    |
-| **`getServerFnOverlayScript`** | Client Shadow DOM DevTools HUD script  | **`192,240 ops/sec`**   | `5.202 µs`  | `5.248 µs`  | `5.20 µs`    |
-
----
-
-### Real-World Production Traffic Simulation
-
-Simulating **500,000 consecutive requests** reproducing realistic Vite dev-server production traffic ratios:
-
-```text
-Request Distribution:
-  ├── ESM Module requests (45%)        [■■■■■■■■■■■■■■■■■■]  225,000 requests
-  ├── Browser console logs (20%)       [■■■■■■■■··········]  100,000 logs
-  ├── TanStack Route requests (15%)    [■■■■■■············]   75,000 routes
-  ├── Client Navigations (8%)          [■■■···············]   40,000 navigations
-  ├── REST / JSON API calls (6%)       [■■················]   30,000 requests
-  ├── TanStack Server Functions (3%)   [■·················]   15,000 server functions
-  └── Static Assets / Fonts (3%)       [■·················]   15,000 assets
-```
-
-- **Effective Throughput**: **`2,069,081 requests / sec`**
-- **Average Latency**: **`0.483 µs`** per logged event
-- **Total Time**: `241.7 ms` for all 500,000 requests
-- **Memory RSS Growth**: `< 1.8 MB` during burst
-
----
-
-### Enterprise Real-World Scenarios
-
-| Real-World Scenario                     | Workload Scale                             | Throughput                | Latency    |
-| :-------------------------------------- | :----------------------------------------- | :------------------------ | :--------- |
-| **Enterprise 60+ Route Tree Scanner**   | 60+ routes, nested layouts, search schemas | **`41,650 trees/sec`**    | `24.01 µs` |
-| **Production 14-Frame Stack Remapping** | Vite + React + TanStack minified bundle    | **`286,576 stacks/sec`**  | `3.49 µs`  |
-| **High-Concurrency Interleaved Burst**  | 100 concurrent clients × 1,000 requests    | **`1,828,499 ops/sec`**   | `0.55 µs`  |
-| **Heavy JSON Syntax Colorizer**         | 5.7 KB nested object/array payloads        | **`56,311 payloads/sec`** | `17.76 µs` |
-| **Adversarial 100KB Message Payload**   | 100 KB giant JSON strings                  | **`10,455 payloads/sec`** | `95.6 µs`  |
-| **Ultra-Deep 100-Frame Stack Trace**    | 100-frame recursion stack traces           | **`79,446 stacks/sec`**   | `12.59 µs` |
-| **Rapid-Fire Cached Time Formatting**   | 2,000,000 cached millisecond timestamps    | **`2,598,656 ops/sec`**   | `0.39 µs`  |
-
----
-
-### Hardware Telemetry & Efficiency Matrix
-
-```text
-┌─ Hardware Resource Consumption Matrix ───────────────────────────────────┐
-  CPU Metrics:
-    User execution time:     26,616.5 ms
-    System kernel time:      102.0 ms
-    Total CPU consumed:      26,718.5 ms
-    Execution model:         Single-core thread-safe NAPI fast-path
-
-  RAM / Memory Metrics:
-    Resident Set Size (RSS): 68.53 MB
-    V8 Heap Used / Total:    5.00 MB / 9.91 MB
-    Native External Memory:  2.18 MB
-    ArrayBuffers Allocated:  137.5 KB
-    Net Heap Growth:         -117.7 KB across 2,000,000 sustained operations
-
-  GPU Metrics:
-    Device Model:            Apple M4 (8 cores) · Metal 4
-    GPU Compute Load:        0.0% (Pure CPU instruction set / zero GPU offload)
-    VRAM Memory Allocated:   0 B (Zero graphics memory residency)
-
-  Suite Throughput Metrics:
-    Total Benchmark Calls:   22,305,000 requests executed
-    Suite Execution Time:    26.79s
-    Correctness Status:      ✓ 80/80 Passed (100% verified)
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
-- **Zero Memory Leaks**: Across 2,000,000 sustained calls with forced V8 garbage collection before and after, net heap growth is **`-117.7 KB`** (100% leak-free).
-- **Zero GPU Overhead**: Does not invoke GPU shaders, Metal/DirectX/Vulkan contexts, or allocate graphics memory buffers (**0.0% GPU cycles, 0 B VRAM**).
-- **Adversarial Resilience**: 100% immune to 18 fuzz vectors (directory traversal, 100KB payloads, corrupt VLQ mappings, unclosed JSON) with zero panics or unhandled exceptions.
-
----
-
-### Benchmark Suite & Profiler Tooling
-
-The native benchmark suite includes an interactive CLI, multi-format exports, and automated regression guards:
+Full microbenchmark tables, binary footprint by platform, the 500k-request traffic simulation, enterprise scenarios, hardware telemetry, and the commands to reproduce everything live in [docs/BENCHMARKS.md](docs/BENCHMARKS.md):
 
 ```bash
-# Run full suite with GC memory leak analysis & hardware telemetry
-pnpm bench
-
-# Quick sub-second pass (~1.5s, 2 rounds, scaled iterations)
-pnpm bench:quick
-
-# Print only the 3-table Master Performance Dashboard
-pnpm bench:summary
-
-# Run automated CI regression guard (fails code 1 if throughput drops > 15%)
-pnpm bench:ci
-
-# Export GitHub Flavored Markdown report (or save with -o report.md)
-pnpm bench:markdown
-
-# Export structured JSON telemetry (or save with -o report.json)
-pnpm bench:json
-
-# Filter specific benchmarks by regex pattern
-pnpm bench -f "serverFn"
-
-# Re-benchmark and save current metrics as the reference baseline
-pnpm bench:update
+pnpm bench          # full suite with GC and telemetry analysis
+pnpm bench:quick    # ~1.5s smoke pass
+pnpm bench:ci       # throughput regression guard
 ```
 
-> **Note on baselines**: the checked-in `scripts/benchmark-baseline.json` stores the best
-> observed throughput per benchmark (merged across multiple runs), so it represents the
-> binary's capability rather than a worst-case snapshot. Run `pnpm bench` / `pnpm bench:ci`
-> on an **idle** machine — heavy background work (compilers, builds) is measured as
-> throughput drop by the regression guard even when nothing changed.
+---
+
+## Troubleshooting
+
+**I see no logs at all.** The plugins only run with `apply: "serve"`, so they are inactive during `vite build` and `vite preview`. Check that `requestLogger()` is in the `plugins` array and that you are running `vite dev`. If you built with a framework adapter, import from that adapter's entry point (see [Usage](#usage)).
+
+**Where did my image/font lines go?** Static assets are filtered out by default as of 0.4.1. Set `excludeAssets: false` in `requestLogger()` to bring them back. Note that `.css` is also classified as a Vite module, so you may need `excludeModules: false` to see it.
+
+**Why do I get `[route] ... [client]` lines?** Client-side navigations are reported by the injected browser script via the History API — no router change is required in your app. Pass `browserLogger({ spaRoutes: false })` to disable them. In TanStack apps these lines are suppressed in favour of the richer `registerTanStackRouterLogger` events.
+
+**The terminal says the module graph ran twice.** This is the duplicate-entry warning described in [Repeated Requests & Duplicate Graph Loads](#repeated-requests--duplicate-graph-loads): look for a second `<script type="module">` in `index.html` or a cache-busted dynamic `import()` of your entry. Disable it with `detectGraphReevaluation: false` if it is intentional.
+
+**Output is all one colour / has ANSI codes when piped.** Colours follow TTY detection, `NO_COLOR`, and `FORCE_COLOR`. Use `stripColors: true` for automatic handling or `stripColors: false` to force plain text. `json: true` gives machine-readable NDJSON for `jq`.
+
+---
+
+## Development
+
+```bash
+pnpm install           # install workspace + playground dependencies
+pnpm test:unit         # fast unit suite
+pnpm test:e2e          # Playwright dev-server suite (needs browsers: pnpm exec playwright install)
+pnpm lint              # Rust clippy + oxlint
+pnpm fmt               # cargo fmt + oxfmt
+pnpm build:ts          # rebuild dist/ bundles and .d.mts types
+pnpm build             # rebuild native addon (napi) + dist/
+```
+
+Benchmarks and their baseline workflow are documented in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ---
 
